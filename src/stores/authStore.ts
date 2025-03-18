@@ -5,6 +5,21 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged, 
+  User as FirebaseUser,
+  getIdToken,
+  getIdTokenResult,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  FirebaseError
+} from 'firebase/auth';
+import { getAuthClient } from '@/lib/firebase/client';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestoreClient } from '@/lib/firebase/client';
 
 // Types for user roles
 type UserRole = 'employee' | 'admin';
@@ -26,12 +41,13 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   token: string | null;
-  tokenExpiry: number | null;
+  tokenExpiration: number | null;
+  sessionType: 'persistent' | 'temporary';
   
   // Actions
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
   logout: () => Promise<void>;
-  refreshToken: () => Promise<void>;
+  refreshToken: (force?: boolean) => Promise<number | null>;
   updateUser: (userData: Partial<User>) => void;
   clearError: () => void;
   checkAuthStatus: () => boolean;
@@ -43,7 +59,42 @@ const isTokenExpired = (expiry: number | null): boolean => {
   return Date.now() > expiry;
 };
 
-// Placeholder for the actual store implementation
+// Helper to convert Firebase user to app User
+const createUserFromFirebaseUser = async (firebaseUser: FirebaseUser): Promise<User> => {
+  const auth = getAuthClient();
+  const firestore = getFirestoreClient();
+  
+  // Get user claims from token
+  const tokenResult = await getIdTokenResult(firebaseUser);
+  const role = tokenResult.claims.role as UserRole || 'employee';
+  
+  try {
+    // Try to get additional user data from Firestore
+    const userDoc = await getDoc(doc(firestore, 'users', firebaseUser.uid));
+    
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      return {
+        id: firebaseUser.uid,
+        name: userData.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+        email: firebaseUser.email || '',
+        role: userData.role || role,
+        preferences: userData.preferences || {}
+      };
+    }
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+  }
+  
+  // Fallback if Firestore data is not available
+  return {
+    id: firebaseUser.uid,
+    name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+    email: firebaseUser.email || '',
+    role: role
+  };
+};
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -53,49 +104,79 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       token: null,
-      tokenExpiry: null,
+      tokenExpiration: null,
+      sessionType: 'temporary',
       
       // Actions
-      login: async (email, password) => {
+      login: async (email: string, password: string, rememberMe = false) => {
         set({ isLoading: true, error: null });
         
         try {
-          // TODO: Implement actual API call to /api/auth/login
-          // This is a placeholder for the actual login implementation
-          // Using password in a real implementation but not in this mock
-          // NOTE: The password parameter is not used in this mock implementation.
-          // In a real implementation, this would be used to authenticate the user.
+          const auth = getAuthClient();
           
-          // Simulate API call
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Sign in with Firebase Auth
+          const userCredential = await signInWithEmailAndPassword(auth, email, password);
+          const firebaseUser = userCredential.user;
           
-          // Mock successful login for development
-          const mockUser: User = {
-            id: '1',
-            name: email.split('@')[0],
-            email,
-            role: email.includes('admin') ? 'admin' : 'employee',
-          };
+          // Get the ID token and expiration
+          const tokenResult = await getIdTokenResult(firebaseUser);
+          const token = tokenResult.token;
           
-          // Mock token with 8-hour expiry
-          const tokenExpiry = Date.now() + (8 * 60 * 60 * 1000);
+          // Calculate token expiration (Firebase tokens expire in 1 hour)
+          const tokenExpiration = new Date(tokenResult.expirationTime).getTime();
           
-          set({ 
-            user: mockUser,
+          // Convert Firebase user to our User model
+          const user = await createUserFromFirebaseUser(firebaseUser);
+          
+          // Set session type based on rememberMe option
+          const sessionType = rememberMe ? 'persistent' : 'temporary';
+          
+          // Update auth state
+          set({
+            user,
+            token,
+            tokenExpiration,
             isAuthenticated: true,
             isLoading: false,
-            token: 'mock-jwt-token',
-            tokenExpiry
+            sessionType,
           });
+          
+          // Configure Firebase persistence based on rememberMe
+          if (rememberMe) {
+            // Set persistence to LOCAL (survives browser restarts)
+            await setPersistence(auth, browserLocalPersistence);
+          } else {
+            // Set persistence to SESSION (cleared when browser is closed)
+            await setPersistence(auth, browserSessionPersistence);
+          }
+          
         } catch (error) {
-          set({ 
-            isLoading: false, 
-            error: 'Invalid email or password. Please try again.',
-            isAuthenticated: false,
-            user: null,
-            token: null,
-            tokenExpiry: null
-          });
+          console.error('Login error:', error);
+          
+          // Handle specific Firebase Auth errors
+          if (error instanceof FirebaseError) {
+            let errorMessage = 'Invalid email or password';
+            
+            switch (error.code) {
+              case 'auth/user-not-found':
+              case 'auth/wrong-password':
+                errorMessage = 'Invalid email or password';
+                break;
+              case 'auth/too-many-requests':
+                errorMessage = 'Too many failed login attempts. Please try again later.';
+                break;
+              case 'auth/user-disabled':
+                errorMessage = 'This account has been disabled. Please contact support.';
+                break;
+              default:
+                errorMessage = 'An error occurred during login. Please try again.';
+            }
+            
+            set({ error: errorMessage, isLoading: false });
+          } else {
+            set({ error: 'An unexpected error occurred', isLoading: false });
+          }
+          
           throw error;
         }
       },
@@ -104,18 +185,18 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         
         try {
-          // TODO: Implement actual API call to logout endpoint
-          // This is a placeholder for the actual logout implementation
+          const auth = getAuthClient();
           
-          // Simulate API call
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Sign out with Firebase Auth
+          await signOut(auth);
           
           set({ 
             user: null,
             isAuthenticated: false,
             isLoading: false,
             token: null,
-            tokenExpiry: null
+            tokenExpiration: null,
+            sessionType: 'temporary'
           });
         } catch (error) {
           set({ 
@@ -126,29 +207,38 @@ export const useAuthStore = create<AuthState>()(
         }
       },
       
-      refreshToken: async () => {
-        const { token, tokenExpiry } = get();
+      refreshToken: async (force = false) => {
+        const { token, tokenExpiration } = get();
         
-        // Only refresh if we have a token and it's close to expiring (within 30 minutes)
-        if (!token || !tokenExpiry || Date.now() > tokenExpiry - (30 * 60 * 1000)) {
+        // Refresh if forced OR if token is about to expire (within 30 minutes)
+        if (force || !token || !tokenExpiration || Date.now() > tokenExpiration - (30 * 60 * 1000)) {
           set({ isLoading: true });
           
           try {
-            // TODO: Implement actual API call to refresh token
-            // This is a placeholder for the actual refresh implementation
+            const auth = getAuthClient();
+            const currentUser = auth.currentUser;
             
-            // Simulate API call
-            await new Promise(resolve => setTimeout(resolve, 500));
+            if (!currentUser) {
+              throw new Error('No authenticated user found');
+            }
             
-            // Mock new token with 8-hour expiry
-            const newTokenExpiry = Date.now() + (8 * 60 * 60 * 1000);
+            // Force token refresh
+            const newToken = await getIdToken(currentUser, true);
+            const tokenResult = await getIdTokenResult(currentUser);
+            const newTokenExpiration = new Date(tokenResult.expirationTime).getTime();
             
             set({ 
               isLoading: false,
-              token: 'new-mock-jwt-token',
-              tokenExpiry: newTokenExpiry
+              token: newToken,
+              tokenExpiration: newTokenExpiration,
+              error: null // Clear any prior auth errors
             });
+            
+            // Return the new expiration for scheduling the next refresh
+            return newTokenExpiration;
           } catch (error) {
+            console.error('Token refresh error:', error);
+            
             // If refresh fails, log the user out
             set({ 
               isLoading: false,
@@ -156,11 +246,15 @@ export const useAuthStore = create<AuthState>()(
               user: null,
               isAuthenticated: false,
               token: null,
-              tokenExpiry: null
+              tokenExpiration: null,
+              sessionType: 'temporary'
             });
             throw error;
           }
         }
+        
+        // Return current expiration if no refresh was needed
+        return tokenExpiration;
       },
       
       updateUser: (userData) => {
@@ -172,20 +266,21 @@ export const useAuthStore = create<AuthState>()(
       clearError: () => set({ error: null }),
       
       checkAuthStatus: () => {
-        const { token, tokenExpiry, isAuthenticated } = get();
+        const { token, tokenExpiration, isAuthenticated } = get();
         
-        if (!token || !tokenExpiry || !isAuthenticated) {
+        if (!token || !tokenExpiration || !isAuthenticated) {
           return false;
         }
         
         // Check if token is expired
-        if (isTokenExpired(tokenExpiry)) {
+        if (isTokenExpired(tokenExpiration)) {
           // Clear auth state if token is expired
           set({ 
             user: null,
             isAuthenticated: false,
             token: null,
-            tokenExpiry: null
+            tokenExpiration: null,
+            sessionType: 'temporary'
           });
           return false;
         }
@@ -199,8 +294,9 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         token: state.token,
-        tokenExpiry: state.tokenExpiry,
-        isAuthenticated: state.isAuthenticated
+        tokenExpiration: state.tokenExpiration,
+        isAuthenticated: state.isAuthenticated,
+        sessionType: state.sessionType
       })
     }
   )

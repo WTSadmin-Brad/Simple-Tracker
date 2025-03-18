@@ -9,29 +9,38 @@
 
 import { Metadata } from 'next';
 import { Suspense } from 'react';
-import AdminHeader from '../_components/AdminHeader';
-import DataGrid from '@/components/feature/admin/data-grid/DataGrid.client';
-import FilterBar from '@/components/feature/admin/data-grid/FilterBar.client';
-import ActionBar from '@/components/feature/admin/data-grid/ActionBar.client';
+import AdminHeader from '../_components/admin-header';
+import DataGrid from '@/components/feature/admin/data-grid/data-grid.client';
 import { 
-  userColumns, 
-  userFilters, 
-  userActions, 
-  userDetailFields,
+  userColumns,
   defaultUserQueryParams,
   User
 } from '@/components/feature/admin/config';
 import { getUsers } from '@/lib/services/userService';
+import UsersDataGrid from './_components/users-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'User Management | Admin | Simple Tracker',
   description: 'Manage and review all user accounts',
 };
 
-export default async function AdminUsersPage() {
-  // Fetch users with default filters
-  // This would normally use searchParams from the URL, but we're using defaults for now
-  const { users, total, page, limit, totalPages } = await getUsers({
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
+  // Extract filter parameters from search params with defaults
+  const role = searchParams.role as string | undefined;
+  const status = searchParams.status as string | undefined;
+  const search = searchParams.search as string | undefined;
+  const page = Number(searchParams.page) || 1;
+  
+  // Fetch users with filters
+  const usersData = await getUsers({
+    role,
+    status,
+    search,
+    page,
     ...defaultUserQueryParams
   });
 
@@ -43,29 +52,8 @@ export default async function AdminUsersPage() {
       />
       
       <div className="mt-6">
-        <FilterBar 
-          filters={userFilters}
-          onFilterChange={() => {}}
-          searchPlaceholder="Search users..."
-          actionButtons={
-            <ActionBar 
-              actions={userActions}
-              position="top"
-            />
-          }
-        />
-        
         <Suspense fallback={<DataGrid isLoading columns={userColumns} data={[]} keyField="id" />}>
-          <DataGrid<User>
-            columns={userColumns}
-            data={users}
-            keyField="id"
-            onRowClick={() => {}}
-            currentPage={page}
-            pageSize={limit}
-            totalItems={total}
-            selectable={true}
-          />
+          <UsersDataGrid initialData={usersData} />
         </Suspense>
       </div>
     </div>

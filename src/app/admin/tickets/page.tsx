@@ -7,19 +7,15 @@
 
 import { Metadata } from 'next';
 import { Suspense } from 'react';
-import AdminHeader from '../_components/AdminHeader';
-import DataGrid from '@/components/feature/admin/data-grid/DataGrid.client';
-import FilterBar from '@/components/feature/admin/data-grid/FilterBar.client';
-import ActionBar from '@/components/feature/admin/data-grid/ActionBar.client';
+import AdminHeader from '../_components/admin-header';
+import DataGrid from '@/components/feature/admin/data-grid/data-grid.client';
 import { 
-  ticketColumns, 
-  ticketFilters, 
-  ticketActions, 
-  ticketDetailFields,
+  ticketColumns,
   defaultTicketQueryParams,
   Ticket
 } from '@/components/feature/admin/config';
 import { getTickets } from '@/lib/services/ticketService';
+import TicketsDataGrid from './_components/tickets-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'Ticket Management | Admin | Simple Tracker',
@@ -38,29 +34,18 @@ export default async function TicketsManagementPage({
   const truck = searchParams.truck as string | undefined;
   const includeArchived = searchParams.includeArchived === 'true' || defaultTicketQueryParams.includeArchived;
   const search = searchParams.search as string | undefined;
+  const page = Number(searchParams.page) || 1;
   
   // Fetch tickets with filters
-  const { tickets, total, page, limit, totalPages } = await getTickets({
+  const ticketsData = await getTickets({
     startDate,
     endDate,
     jobsite,
     truck,
     status: includeArchived ? undefined : 'active',
     search,
+    page
   });
-
-  // Handle client-side actions (these will be implemented at runtime in the client component)
-  const handleFilterChange = () => {
-    // This will be implemented in the client component
-  };
-
-  const handleActionClick = () => {
-    // This will be implemented in the client component
-  };
-
-  const handleRowClick = () => {
-    // This will be implemented in the client component
-  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -70,29 +55,8 @@ export default async function TicketsManagementPage({
       />
       
       <div className="mt-6">
-        <FilterBar 
-          filters={ticketFilters}
-          onFilterChange={handleFilterChange}
-          searchPlaceholder="Search tickets..."
-          actionButtons={
-            <ActionBar 
-              actions={ticketActions}
-              position="top"
-            />
-          }
-        />
-        
         <Suspense fallback={<DataGrid isLoading columns={ticketColumns} data={[]} keyField="id" />}>
-          <DataGrid<Ticket>
-            columns={ticketColumns}
-            data={tickets}
-            keyField="id"
-            onRowClick={handleRowClick}
-            currentPage={page}
-            pageSize={limit}
-            totalItems={total}
-            selectable={true}
-          />
+          <TicketsDataGrid initialData={ticketsData} />
         </Suspense>
       </div>
     </div>

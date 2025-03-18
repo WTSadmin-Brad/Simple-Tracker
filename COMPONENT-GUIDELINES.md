@@ -202,6 +202,35 @@ The ticket submission wizard follows a compound component pattern:
    - `ImageUploadStep.client.tsx`
    - `ConfirmationStep.client.tsx`
 
+## Dashboard Component Structure
+
+The admin dashboard follows a service-oriented architecture:
+
+1. **Dashboard Service**: `dashboardService.ts`
+   - Provides data fetching and transformation for all card types
+   - Connects to existing services (ticketService, workdayService, userService)
+   - Handles data processing and formatting
+   - Includes comprehensive error handling and fallbacks
+
+2. **Card Components**:
+   - **MetricCard**: KPI counters with trend indicators
+   - **ChartCard**: Data visualizations (line, bar, pie)
+   - **StatusCard**: System health monitoring
+   - **TableCard**: Tabular data with sorting and pagination
+   - **ActivityCard**: Recent activity timeline
+
+3. **Dashboard Layout**:
+   - Provides a customizable "bento grid" layout
+   - Allows drag-and-drop card positioning
+   - Supports card resizing and configuration
+   - Persists user customizations
+
+All dashboard components follow these principles:
+- Proper loading states with animated indicators
+- Comprehensive error handling with retry capabilities
+- Configurable refresh intervals
+- Responsive design for different screen sizes
+
 ## Naming Conventions
 
 1. **PascalCase** for component names

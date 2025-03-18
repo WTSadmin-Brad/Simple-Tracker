@@ -9,29 +9,38 @@
 
 import { Metadata } from 'next';
 import { Suspense } from 'react';
-import AdminHeader from '../_components/AdminHeader';
-import DataGrid from '@/components/feature/admin/data-grid/DataGrid.client';
-import FilterBar from '@/components/feature/admin/data-grid/FilterBar.client';
-import ActionBar from '@/components/feature/admin/data-grid/ActionBar.client';
+import AdminHeader from '../_components/admin-header';
+import DataGrid from '@/components/feature/admin/data-grid/data-grid.client';
 import { 
-  jobsiteColumns, 
-  jobsiteFilters, 
-  jobsiteActions, 
-  jobsiteDetailFields,
+  jobsiteColumns,
   defaultJobsiteQueryParams,
   Jobsite
 } from '@/components/feature/admin/config';
 import { getJobsites } from '@/lib/services/jobsiteService';
+import JobsitesDataGrid from './_components/jobsites-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'Jobsite Management | Admin | Simple Tracker',
   description: 'Manage and review all jobsites',
 };
 
-export default async function AdminJobsitesPage() {
-  // Fetch jobsites with default filters
-  // This would normally use searchParams from the URL, but we're using defaults for now
-  const { jobsites, total, page, limit, totalPages } = await getJobsites({
+export default async function AdminJobsitesPage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
+  // Extract filter parameters from search params with defaults
+  const status = searchParams.status as string | undefined;
+  const client = searchParams.client as string | undefined;
+  const search = searchParams.search as string | undefined;
+  const page = Number(searchParams.page) || 1;
+  
+  // Fetch jobsites with filters
+  const jobsitesData = await getJobsites({
+    status,
+    client,
+    search,
+    page,
     ...defaultJobsiteQueryParams
   });
 
@@ -43,29 +52,8 @@ export default async function AdminJobsitesPage() {
       />
       
       <div className="mt-6">
-        <FilterBar 
-          filters={jobsiteFilters}
-          onFilterChange={() => {}}
-          searchPlaceholder="Search jobsites..."
-          actionButtons={
-            <ActionBar 
-              actions={jobsiteActions}
-              position="top"
-            />
-          }
-        />
-        
         <Suspense fallback={<DataGrid isLoading columns={jobsiteColumns} data={[]} keyField="id" />}>
-          <DataGrid<Jobsite>
-            columns={jobsiteColumns}
-            data={jobsites}
-            keyField="id"
-            onRowClick={() => {}}
-            currentPage={page}
-            pageSize={limit}
-            totalItems={total}
-            selectable={true}
-          />
+          <JobsitesDataGrid initialData={jobsitesData} />
         </Suspense>
       </div>
     </div>

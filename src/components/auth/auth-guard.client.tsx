@@ -11,6 +11,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { useAuthStore } from '@/stores/authStore';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -23,47 +24,53 @@ export default function AuthGuard({
 }: AuthGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isChecking, setIsChecking] = useState(true);
+  
+  // Use the Zustand auth store
+  const { 
+    user, 
+    isAuthenticated, 
+    isLoading, 
+    checkAuthStatus 
+  } = useAuthStore();
   
   useEffect(() => {
-    // TODO: Implement actual authentication check
-    // This is a placeholder for the authentication check
-    
-    const checkAuth = async () => {
+    const verifyAuth = async () => {
       try {
-        // Simulate API call to check authentication status
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Check if the user is authenticated
+        const isAuth = checkAuthStatus();
         
-        // TODO: Get actual authentication status from API or local storage
-        const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-        const userRole = localStorage.getItem('userRole') || 'employee';
-        
-        if (!isAuthenticated) {
+        if (!isAuth) {
           // Redirect to login page if not authenticated
           router.push(`/auth/login?returnUrl=${encodeURIComponent(pathname)}`);
           return;
         }
         
-        if (requiredRole && userRole !== requiredRole) {
+        // Check if the user has the required role
+        if (requiredRole && user?.role !== requiredRole) {
           // Redirect to appropriate dashboard if user doesn't have required role
-          const redirectPath = userRole === 'admin' ? '/admin/dashboard' : '/employee/calendar';
+          const redirectPath = user?.role === 'admin' ? '/admin/dashboard' : '/employee/calendar';
           router.push(redirectPath);
           return;
         }
         
-        setIsLoading(false);
+        // User is authenticated and has the required role
+        setIsChecking(false);
       } catch (error) {
-        console.error('Auth check error:', error);
+        console.error('Auth verification error:', error);
         // Redirect to login page on error
         router.push('/auth/login');
       }
     };
     
-    checkAuth();
-  }, [pathname, router, requiredRole]);
+    // Only verify if not currently loading
+    if (!isLoading) {
+      verifyAuth();
+    }
+  }, [pathname, router, requiredRole, user, isAuthenticated, isLoading, checkAuthStatus]);
   
   // Show loading state while checking authentication
-  if (isLoading) {
+  if (isLoading || isChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>

@@ -1,89 +1,108 @@
 /**
  * Firebase Client SDK setup
  * 
- * @source directory-structure.md - "Firebase Configuration" section
+ * This file initializes the Firebase Client SDK for browser-side operations
+ * including Firestore, Storage, and Authentication.
  */
 
-// This is a placeholder for the Firebase Client SDK configuration
-// In a real implementation, this would initialize the Firebase Client SDK for client-side operations
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, onSnapshot } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAnalytics } from 'firebase/analytics';
 
-/**
- * Initialize Firebase Client SDK
- * 
- * TODO: Implement actual Firebase Client SDK initialization
- */
-export function initializeFirebaseClient() {
-  // In a real implementation, this would initialize the Firebase Client SDK
-  // using environment variables for Firebase configuration
-  
-  console.log('Firebase Client SDK initialized');
+// Firebase configuration from the Firebase console
+const firebaseConfig = {
+  apiKey: "AIzaSvb79jEdv-8hex7D1NP2d4YYPJoK-1Bjqmo",
+  authDomain: "simple-tracker-99234.firebaseapp.com",
+  projectId: "simple-tracker-99234",
+  storageBucket: "simple-tracker-99234.firebasestorage.app",
+  messagingSenderId: "3441135708B",
+  appId: "1:3441135708B:web:d6bb4ca3172ce3b78dc1ed",
+  measurementId: "G-P9TCQFTW4B"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+
+// Initialize services
+const firestoreInstance = getFirestore(app);
+const storageInstance = getStorage(app);
+const authInstance = getAuth(app);
+
+// Initialize Analytics only on client side
+if (typeof window !== 'undefined') {
+  getAnalytics(app);
 }
 
 /**
- * Get Firestore Client instance
+ * Get Firebase app instance
+ */
+export function getFirebaseApp() {
+  return app;
+}
+
+/**
+ * Get Firestore instance
  * Used for client-side Firestore operations
- * 
- * TODO: Implement actual Firestore Client instance
  */
 export function getFirestoreClient() {
-  // In a real implementation, this would return the Firestore Client instance
-  
-  return {
-    collection: (path: string) => ({
-      doc: (id: string) => ({
-        get: async () => ({ exists: false, data: () => null }),
-        onSnapshot: (callback: any) => {
-          callback({ exists: false, data: () => null });
-          return () => {}; // Unsubscribe function
-        }
-      }),
-      where: () => ({ get: async () => ({ docs: [] }) })
-    })
-  };
+  return firestoreInstance;
 }
 
 /**
- * Get Storage Client instance
+ * Get Storage instance
  * Used for client-side Storage operations
- * 
- * TODO: Implement actual Storage Client instance
  */
 export function getStorageClient() {
-  // In a real implementation, this would return the Storage Client instance
-  
-  return {
-    ref: (path: string) => ({
-      put: async (file: File) => ({
-        ref: {
-          getDownloadURL: async () => 'https://example.com/mock-download-url'
-        }
-      }),
-      delete: async () => console.log(`Deleting file ${path}`)
-    })
-  };
+  return storageInstance;
 }
 
 /**
- * Get Auth Client instance
+ * Get Auth instance
  * Used for client-side Auth operations
- * 
- * TODO: Implement actual Auth Client instance
  */
 export function getAuthClient() {
-  // In a real implementation, this would return the Auth Client instance
-  
-  return {
-    signInWithEmailAndPassword: async (email: string, password: string) => ({
-      user: {
-        uid: 'user-123',
-        email,
-        getIdToken: async () => 'mock-id-token'
-      }
-    }),
-    signOut: async () => console.log('Signed out'),
-    onAuthStateChanged: (callback: any) => {
-      callback(null); // No user initially
-      return () => {}; // Unsubscribe function
-    }
-  };
+  return authInstance;
 }
+
+/**
+ * Helper functions for common Firestore operations
+ */
+
+// Collection reference helper
+export const getCollection = (path: string) => {
+  return collection(firestoreInstance, path);
+};
+
+// Document reference helper
+export const getDocument = (collectionPath: string, docId: string) => {
+  return doc(firestoreInstance, collectionPath, docId);
+};
+
+// Storage reference helper
+export const getStorageRef = (path: string) => {
+  return ref(storageInstance, path);
+};
+
+// Export Firestore functions for direct use
+export {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  onSnapshot,
+  collection
+};
+
+// Export Storage functions for direct use
+export {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
+};

@@ -72,8 +72,5 @@ next-env.d.ts
 # Optional stylelint cache
 .stylelintcache
 
-# env files (can opt-in for committing if needed)
-.env*
-
 # vercel
 .vercel

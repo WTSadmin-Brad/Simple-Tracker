@@ -9,21 +9,31 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
+import { useAuthStore } from '@/stores/authStore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { getAuthClient } from '@/lib/firebase/client';
+import { getIdToken, getIdTokenResult } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
+import { toast } from '@/components/ui/use-toast';
 
-interface User {
+// User type is now imported from the store
+type User = {
   id: string;
   email: string;
   name: string;
   role: 'admin' | 'employee';
-}
+  preferences?: Record<string, unknown>;
+};
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  error: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,97 +51,163 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
   
+  // Use the Zustand auth store instead of local state
+  const { 
+    user, 
+    isLoading, 
+    isAuthenticated, 
+    error,
+    login, 
+    logout, 
+    refreshToken,
+    updateUser,
+    clearError,
+    tokenExpiration
+  } = useAuthStore();
+  
+  // Set up Firebase auth state listener
   useEffect(() => {
-    // Check if user is already authenticated on mount
-    const checkAuthStatus = async () => {
-      try {
-        // TODO: Implement actual authentication check
-        // This is a placeholder for the authentication check
-        
-        const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-        
-        if (isAuthenticated) {
-          // TODO: Get actual user data from API or local storage
-          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-          setUser(userData as User);
+    const auth = getAuthClient();
+    
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Get token and check if it needs refresh
+          await refreshToken();
+        } catch (error) {
+          console.error('Error refreshing token:', error);
+          // Token refresh failed, user will need to login again
+          await logout();
         }
-      } catch (error) {
-        console.error('Auth status check error:', error);
-        // Clear any potentially corrupted auth data
-        localStorage.removeItem('isAuthenticated');
-        localStorage.removeItem('userData');
-      } finally {
-        setIsLoading(false);
       }
-    };
+    });
     
-    checkAuthStatus();
-  }, []);
+    // Clean up the listener on unmount
+    return () => unsubscribe();
+  }, [refreshToken, logout]);
   
-  const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    
-    try {
-      // TODO: Implement actual login API call
-      // This is a placeholder for the login API call
+  // Proactive token refresh scheduler
+  useEffect(() => {
+    // Only schedule if user is authenticated and has a token
+    if (isAuthenticated && user && tokenExpiration) {
+      // Calculate time until refresh (75% of remaining time)
+      const timeUntilExpiry = tokenExpiration - Date.now();
+      const refreshTime = Math.max(Math.floor(timeUntilExpiry * 0.75), 0);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`Token refresh scheduled in ${Math.round(refreshTime / 1000 / 60)} minutes`);
       
-      // Mock successful login for development
-      const mockUser: User = {
-        id: '1',
-        email,
-        name: email.split('@')[0],
-        role: email.includes('admin') ? 'admin' : 'employee',
+      // Schedule the refresh
+      const refreshTimerId = setTimeout(async () => {
+        try {
+          await refreshToken();
+          console.log('Token refreshed successfully');
+        } catch (error) {
+          console.error('Failed to refresh token:', error);
+          // Handle refresh failure - typically by logging out the user
+          await logout();
+        }
+      }, refreshTime);
+      
+      // Clean up the timer on unmount or when auth state changes
+      return () => clearTimeout(refreshTimerId);
+    }
+  }, [isAuthenticated, user, tokenExpiration, refreshToken, logout]);
+  
+  // Refresh-on-activity mechanism
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Define events to listen for (user activity)
+      const activityEvents = ['mousedown', 'keydown', 'touchstart', 'click'];
+      let activityTimeout: NodeJS.Timeout | null = null;
+      
+      // Activity handler with debouncing
+      const handleActivity = () => {
+        if (activityTimeout) {
+          clearTimeout(activityTimeout);
+        }
+        
+        activityTimeout = setTimeout(async () => {
+          // Check if token needs refresh (within 10 minutes of expiry)
+          const timeUntilExpiry = tokenExpiration ? tokenExpiration - Date.now() : 0;
+          if (timeUntilExpiry < 10 * 60 * 1000) {
+            try {
+              await refreshToken();
+              console.log('Token refreshed on user activity');
+            } catch (error) {
+              console.error('Failed to refresh token on activity:', error);
+            }
+          }
+        }, 1000); // Debounce for 1 second
       };
       
-      // Store auth data
-      localStorage.setItem('isAuthenticated', 'true');
-      localStorage.setItem('userData', JSON.stringify(mockUser));
-      localStorage.setItem('userRole', mockUser.role);
+      // Add activity event listeners
+      activityEvents.forEach(event => {
+        window.addEventListener(event, handleActivity);
+      });
       
-      setUser(mockUser);
-    } catch (error) {
-      console.error('Login error:', error);
-      throw new Error('Invalid email or password');
-    } finally {
-      setIsLoading(false);
+      // Clean up
+      return () => {
+        if (activityTimeout) {
+          clearTimeout(activityTimeout);
+        }
+        activityEvents.forEach(event => {
+          window.removeEventListener(event, handleActivity);
+        });
+      };
     }
-  };
+  }, [isAuthenticated, tokenExpiration, refreshToken]);
   
-  const logout = async () => {
-    setIsLoading(true);
-    
-    try {
-      // TODO: Implement actual logout API call
-      // This is a placeholder for the logout API call
+  // Background refresh for long sessions
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Set up a background interval to check token (every 15 minutes)
+      const backgroundCheckInterval = setInterval(async () => {
+        // Check if token needs refresh (within 20 minutes of expiry)
+        const timeUntilExpiry = tokenExpiration ? tokenExpiration - Date.now() : 0;
+        if (timeUntilExpiry < 20 * 60 * 1000) {
+          try {
+            await refreshToken();
+            console.log('Token refreshed in background check');
+          } catch (error) {
+            console.error('Failed to refresh token in background check:', error);
+          }
+        }
+      }, 15 * 60 * 1000); // 15 minutes
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Clear auth data
-      localStorage.removeItem('isAuthenticated');
-      localStorage.removeItem('userData');
-      localStorage.removeItem('userRole');
-      
-      setUser(null);
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      setIsLoading(false);
+      return () => clearInterval(backgroundCheckInterval);
     }
-  };
+  }, [isAuthenticated, tokenExpiration, refreshToken]);
+  
+  // Visual feedback on session expiry
+  useEffect(() => {
+    // Session expiry detection
+    if (error && error.includes('session has expired')) {
+      // Show toast notification
+      toast({
+        title: "Session Expired",
+        description: "Your session has expired. Please login again.",
+        variant: "destructive",
+      });
+      
+      // Redirect to login page after a short delay
+      const redirectTimer = setTimeout(() => {
+        router.push('/login');
+      }, 2000);
+      
+      return () => clearTimeout(redirectTimer);
+    }
+  }, [error, router]);
   
   const value = {
     user,
     isLoading,
-    isAuthenticated: !!user,
+    isAuthenticated,
+    error,
     login,
     logout,
+    clearError
   };
   
   return (

@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import LoginForm from '@/components/auth/login-form';
+import LoginForm from '@/components/auth/login-form.client';
 
 export default function LoginPage() {
   return (

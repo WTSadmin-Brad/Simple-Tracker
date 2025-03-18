@@ -9,29 +9,36 @@
 
 import { Metadata } from 'next';
 import { Suspense } from 'react';
-import AdminHeader from '../_components/AdminHeader';
-import DataGrid from '@/components/feature/admin/data-grid/DataGrid.client';
-import FilterBar from '@/components/feature/admin/data-grid/FilterBar.client';
-import ActionBar from '@/components/feature/admin/data-grid/ActionBar.client';
+import AdminHeader from '../_components/admin-header';
+import DataGrid from '@/components/feature/admin/data-grid/data-grid.client';
 import { 
-  truckColumns, 
-  truckFilters, 
-  truckActions, 
-  truckDetailFields,
+  truckColumns,
   defaultTruckQueryParams,
   Truck
 } from '@/components/feature/admin/config';
 import { getTrucks } from '@/lib/services/truckService';
+import TrucksDataGrid from './_components/trucks-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'Truck Management | Admin | Simple Tracker',
   description: 'Manage and review all trucks',
 };
 
-export default async function AdminTrucksPage() {
-  // Fetch trucks with default filters
-  // This would normally use searchParams from the URL, but we're using defaults for now
-  const { trucks, total, page, limit, totalPages } = await getTrucks({
+export default async function AdminTrucksPage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
+  // Extract filter parameters from search params with defaults
+  const status = searchParams.status as string | undefined;
+  const search = searchParams.search as string | undefined;
+  const page = Number(searchParams.page) || 1;
+  
+  // Fetch trucks with filters
+  const trucksData = await getTrucks({
+    status,
+    search,
+    page,
     ...defaultTruckQueryParams
   });
 
@@ -43,29 +50,8 @@ export default async function AdminTrucksPage() {
       />
       
       <div className="mt-6">
-        <FilterBar 
-          filters={truckFilters}
-          onFilterChange={() => {}}
-          searchPlaceholder="Search trucks..."
-          actionButtons={
-            <ActionBar 
-              actions={truckActions}
-              position="top"
-            />
-          }
-        />
-        
         <Suspense fallback={<DataGrid isLoading columns={truckColumns} data={[]} keyField="id" />}>
-          <DataGrid<Truck>
-            columns={truckColumns}
-            data={trucks}
-            keyField="id"
-            onRowClick={() => {}}
-            currentPage={page}
-            pageSize={limit}
-            totalItems={total}
-            selectable={true}
-          />
+          <TrucksDataGrid initialData={trucksData} />
         </Suspense>
       </div>
     </div>

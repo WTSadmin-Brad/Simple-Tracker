@@ -3,7 +3,7 @@
  * Displays the 4-step wizard for ticket submission
  */
 
-import { WizardContainer } from './_components/WizardContainer.client';
+import { WizardContainer } from './_components/wizard-container.client';
 
 export default function NewTicketPage() {
   return (

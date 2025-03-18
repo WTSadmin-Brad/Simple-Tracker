@@ -13,7 +13,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { format, isWithinInterval, addDays, isSameDay } from 'date-fns';
 import { Workday, WorkdayType, WorkdayWithTickets } from '@/types/workday';
-import workdayService from '@/services/workdayService';
+import workdayService from '@/lib/services/workdayService';
 
 /**
  * Calendar view modes
