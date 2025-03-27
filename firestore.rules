@@ -1,0 +1,228 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===========================
+    // HELPER FUNCTIONS
+    // ===========================
+    
+    // Authentication helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+    
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Time and date validation
+    function isValidTimestamp(field) {
+      return request.resource.data[field] is timestamp;
+    }
+    
+    function isInTheFuture(field) {
+      return request.resource.data[field] > request.time;
+    }
+    
+    function isNotTooFarInFuture(field, days) {
+      let maxDate = request.time + duration.value(days, 'd');
+      return request.resource.data[field] <= maxDate;
+    }
+    
+    function isBeforeDeadline(deadline) {
+      return resource.data[deadline] > request.time;
+    }
+    
+    // Field validation
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasValidTicketCount(field) {
+      return request.resource.data[field] is number && 
+             request.resource.data[field] >= 0 && 
+             request.resource.data[field] <= 150;
+    }
+    
+    function isNotChanging(field) {
+      return request.resource.data[field] == resource.data[field];
+    }
+    
+    // ===========================
+    // COLLECTION RULES
+    // ===========================
+    
+    // Users Collection
+    match /users/{userId} {
+      // Read: User can read their own profile, admins can read any
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Create: Only admins can create users
+      allow create: if isAdmin() && 
+                      hasRequiredFields(['username', 'role', 'createdAt', 'createdBy']);
+      
+      // Update: 
+      // - Users can update only their preferences
+      // - Admins can update any field
+      allow update: if (isOwner(userId) && onlyChangingAllowedUserFields()) || isAdmin();
+      
+      // Delete: Prevent deletion; use soft delete instead
+      allow delete: if false;  
+
+      // User-specific helper functions
+      function onlyChangingAllowedUserFields() {
+        let allowedFields = ['preferences', 'updatedAt', 'updatedBy', 'animationPrefs'];
+        let changedFields = request.resource.data.diff(resource.data).affectedKeys();
+        return changedFields.hasOnly(allowedFields);
+      }
+    }
+    
+    // Jobsites Collection
+    match /jobsites/{jobsiteId} {
+      // Read: All authenticated users can read
+      allow read: if isSignedIn();
+      
+      // Write: Only admins can create, update, delete
+      allow create: if isAdmin() && 
+                      hasRequiredFields(['id', 'name', 'createdAt', 'createdBy']);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Trucks Collection
+    match /trucks/{truckId} {
+      // Read: All authenticated users can read
+      allow read: if isSignedIn();
+      
+      // Write: Only admins can create, update, delete
+      allow create: if isAdmin() && 
+                      hasRequiredFields(['id', 'nickname', 'isActive', 'createdAt', 'createdBy']);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Workdays Collection
+    match /workdays/{workdayId} {
+      // Read: User can read their own workdays, admins can read any
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      
+      // Create: User can create their own workdays with proper validation
+      allow create: if isSignedIn() && 
+                     request.resource.data.userId == request.auth.uid &&
+                     hasRequiredFields(['userId', 'date', 'jobsite', 'workType', 'submissionDate', 'editableUntil']) &&
+                     isValidTimestamp('editableUntil') &&
+                     isNotTooFarInFuture('editableUntil', 7) &&
+                     request.resource.data.workType in ['full', 'half', 'off'];
+      
+      // Update: 
+      // - User can update their own workdays if before editableUntil date
+      // - User cannot change userId
+      // - Admins can update any workday
+      allow update: if (isOwner(resource.data.userId) && 
+                        isNotChanging('userId') &&
+                        isBeforeDeadline('editableUntil')) || 
+                       isAdmin();
+                       
+      // Delete: Only admins can delete
+      allow delete: if isAdmin();
+    }
+    
+    // Tickets Collection
+    match /tickets/{ticketId} {
+      // Read: User can read their own tickets, admins can read any
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      
+      // Create: User can create their own tickets with proper validation
+      allow create: if isSignedIn() && 
+                     request.resource.data.userId == request.auth.uid &&
+                     hasRequiredFields(['userId', 'date', 'truckNumber', 'truckNickname', 
+                                        'jobsite', 'jobsiteName', 'hangers', 'leaner6To12', 
+                                        'leaner13To24', 'leaner25To36', 'leaner37To48', 
+                                        'leaner49Plus', 'total', 'submissionDate', 
+                                        'archiveStatus']) &&
+                     validateTicketData() &&
+                     request.resource.data.archiveStatus == 'active';
+      
+      // Update: 
+      // - User can update their own tickets but not archive status
+      // - Admins can update any field
+      allow update: if (isOwner(resource.data.userId) && 
+                        onlyUpdatingAllowedTicketFields() &&
+                        !changingArchiveStatus()) || 
+                       (isAdmin() && validateTicketData());
+                       
+      // Delete: Only admins can delete
+      allow delete: if isAdmin();
+      
+      // Ticket-specific helper functions
+      function validateTicketData() {
+        return hasValidTicketCount('hangers') &&
+               hasValidTicketCount('leaner6To12') &&
+               hasValidTicketCount('leaner13To24') &&
+               hasValidTicketCount('leaner25To36') &&
+               hasValidTicketCount('leaner37To48') &&
+               hasValidTicketCount('leaner49Plus') &&
+               calculateTotalIsCorrect();
+      }
+      
+      function calculateTotalIsCorrect() {
+        let calculatedTotal = request.resource.data.hangers +
+                             request.resource.data.leaner6To12 +
+                             request.resource.data.leaner13To24 +
+                             request.resource.data.leaner25To36 +
+                             request.resource.data.leaner37To48 +
+                             request.resource.data.leaner49Plus;
+        return request.resource.data.total == calculatedTotal;
+      }
+      
+      function onlyUpdatingAllowedTicketFields() {
+        let allowedFields = ['hangers', 'leaner6To12', 'leaner13To24', 
+                           'leaner25To36', 'leaner37To48', 'leaner49Plus', 
+                           'total', 'images', 'thumbnails', 'imageCount'];
+        let changedFields = request.resource.data.diff(resource.data).affectedKeys();
+        return changedFields.hasOnly(allowedFields);
+      }
+      
+      function changingArchiveStatus() {
+        return request.resource.data.archiveStatus != resource.data.archiveStatus;
+      }
+    }
+    
+    // ArchiveIndex Collection
+    match /archiveIndex/{archiveId} {
+      // Read: All authenticated users can read
+      allow read: if isSignedIn();
+      
+      // Write: Only admins can create, update, delete
+      allow create: if isAdmin() && 
+                      hasRequiredFields(['id', 'type', 'entityId', 'archiveUrl', 'recordCount', 'cutoffDate', 'createdAt']);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // WizardState Collection
+    match /wizardState/{userId} {
+      // Read: User can read their own wizard state, admins can read any
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Create/Update: 
+      // - User can only manage their own wizard state
+      // - Must have valid expiration date (not too far in future)
+      allow create, update: if isOwner(userId) && 
+                             hasRequiredFields(['userId', 'currentStep', 'expiresAt']) &&
+                             isValidTimestamp('expiresAt') &&
+                             isInTheFuture('expiresAt') && 
+                             isNotTooFarInFuture('expiresAt', 1);
+                             
+      // Delete: User can delete their own wizard state, admins can delete any
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+  }
+}

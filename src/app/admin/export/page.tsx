@@ -6,7 +6,8 @@
  */
 
 import { Metadata } from 'next';
-import AdminHeader from '../_components/AdminHeader';
+import AdminHeader from '../_components/admin-header';
+import { ExportManagerClient } from './_components/export-manager-client';
 
 export const metadata: Metadata = {
   title: 'Data Export | Admin | Simple Tracker',
@@ -21,16 +22,8 @@ export default function DataExportPage() {
         description="Export tickets and workday data"
       />
       
-      {/* Data export components will be added here */}
       <div className="mt-6">
-        {/* 
-          TODO: Implement data export components:
-          - ExportTypeSelector for choosing between tickets and workdays
-          - DateRangeSelector for selecting the export period
-          - FormatSelector for choosing export format (CSV, Excel, etc.)
-          - ExportButton for triggering the export process
-          - ExportHistoryList for viewing past exports
-        */}
+        <ExportManagerClient />
       </div>
     </div>
   );

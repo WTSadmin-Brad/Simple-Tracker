@@ -10,6 +10,9 @@ import { motion } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
 import { format } from 'date-fns';
 import { WorkdayType } from '@/types/workday';
+import { getWorkTypeColorClass } from '@/lib/helpers/workdayHelpers';
+import { DATE_FORMATS } from '@/lib/constants/dateFormats';
+import TicketIndicator from './ticket-indicator';
 
 interface DayCellProps {
   date: Date;
@@ -18,6 +21,7 @@ interface DayCellProps {
   hasTickets?: boolean;
   isToday?: boolean;
   onClick?: (date: Date) => void;
+  ariaLabel?: string;
 }
 
 /**
@@ -30,21 +34,12 @@ const DayCell = ({
   workType, 
   hasTickets = false,
   isToday = false,
-  onClick 
+  onClick,
+  ariaLabel
 }: DayCellProps) => {
   const shouldReduceMotion = useReducedMotion();
-  const dayNumber = format(date, 'd');
-  
-  // Get appropriate color class based on work type
-  const getWorkTypeColorClass = (type?: WorkdayType) => {
-    switch (type) {
-      case 'full': return 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700';
-      case 'half': return 'bg-yellow-100 dark:bg-yellow-900 border-yellow-300 dark:border-yellow-700';
-      case 'off': return 'bg-red-100 dark:bg-red-900 border-red-300 dark:border-red-700';
-      default: return 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700';
-    }
-  };
-  
+  const dayNumber = format(date, DATE_FORMATS.DAY_NUMBER);
+  const formattedDate = format(date, DATE_FORMATS.ARIA_DATE);
   const colorClass = getWorkTypeColorClass(workType);
   
   const handleClick = () => {
@@ -63,7 +58,10 @@ const DayCell = ({
         ${isCurrentMonth ? colorClass : 'bg-gray-100 dark:bg-gray-900 text-gray-400 dark:text-gray-600'}
         ${isToday ? 'ring-2 ring-primary ring-offset-2 dark:ring-offset-gray-900' : ''}
       `}
-      data-date={format(date, 'yyyy-MM-dd')}
+      data-date={format(date, DATE_FORMATS.API_DATE)}
+      role="button"
+      aria-label={ariaLabel || `${formattedDate}${workType ? `, ${workType} day` : ''}${hasTickets ? ', has tickets' : ''}`}
+      tabIndex={isCurrentMonth ? 0 : -1}
     >
       <div className="p-1 h-full flex flex-col">
         <div className={`text-xs font-medium ${isToday ? 'text-primary font-bold' : ''}`}>
@@ -71,11 +69,7 @@ const DayCell = ({
         </div>
         
         {/* Ticket indicator */}
-        {hasTickets && (
-          <div className="mt-auto self-end">
-            <div className="w-2 h-2 bg-blue-500 dark:bg-blue-400 rounded-full mr-1 mb-1"></div>
-          </div>
-        )}
+        {hasTickets && <TicketIndicator />}
       </div>
     </motion.div>
   );

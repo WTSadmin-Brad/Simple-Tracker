@@ -24,7 +24,16 @@ import {
   formatFileSize
 } from '@/lib/helpers/imageHelpers';
 import useImageUpload from '@/hooks/useImageUpload';
-import imageService from '@/lib/services/image-service';
+
+// Animation constants
+const ANIMATION_CONFIG = {
+  spring: {
+    type: 'spring',
+    stiffness: 400,
+    damping: 25
+  },
+  duration: 0.3
+};
 
 interface ImageUploadFieldProps {
   label: string;
@@ -181,6 +190,7 @@ export function ImageUploadField({
   
   return (
     <div className={cn("space-y-3", className)}>
+      {/* Field label */}
       <div className="flex items-center justify-between">
         <Label 
           htmlFor={fieldId}
@@ -209,118 +219,108 @@ export function ImageUploadField({
           }
         />
         
-        {/* Preview area with enhanced UI */}
-        {preview && previewUrl ? (
-          <div className="relative w-full aspect-video mb-3 rounded-lg overflow-hidden border border-border">
-            <img
-              src={previewUrl}
-              alt="Image preview"
-              className="w-full h-full object-cover"
-            />
-            
-            <Button
-              type="button"
-              variant="destructive"
-              size="icon"
-              onClick={clearImage}
-              disabled={disabled || isUploading}
-              className="absolute top-2 right-2 h-8 w-8 rounded-full"
-              aria-label="Remove image"
+        {/* Upload area */}
+        <AnimatePresence mode="wait">
+          {!previewUrl ? (
+            /* Upload button when no image is selected */
+            <motion.div
+              key="upload"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={prefersReducedMotion ? { duration: 0.1 } : ANIMATION_CONFIG.spring}
+              className="w-full"
             >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : (
-          <motion.div
-            className={`w-full aspect-video mb-3 rounded-lg border-2 border-dashed border-border 
-              flex flex-col items-center justify-center cursor-pointer hover:border-primary 
-              transition-colors ${isUploading ? 'pointer-events-none' : ''}`}
-            onClick={!disabled && !isUploading ? triggerFileInput : undefined}
-            whileHover={{ scale: prefersReducedMotion ? 1 : 1.01 }}
-            whileTap={{ scale: prefersReducedMotion ? 1 : 0.99 }}
-          >
-            {isUploading ? (
-              <div className="flex flex-col items-center">
-                <div className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin mb-2" />
-                <p className="text-sm text-muted-foreground">Uploading...</p>
-                <div className="w-48 mt-2">
-                  <Progress value={progressValue} className="h-2" />
-                  <p className="text-xs text-muted-foreground mt-1 text-center">
-                    {Math.round(progressValue)}%
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <>
-                <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  Click to select an image
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Max size: {formatFileSize(maxSize)}
-                </p>
-              </>
-            )}
-          </motion.div>
-        )}
-        
-        {/* Upload button */}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={triggerFileInput}
-          disabled={disabled || isUploading}
-          className="w-full h-10 touch-target"
-        >
-          {isUploading ? (
-            <span className="flex items-center">
-              <svg 
-                className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" 
-                xmlns="http://www.w3.org/2000/svg" 
-                fill="none" 
-                viewBox="0 0 24 24"
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={triggerFileInput}
+                disabled={disabled || isUploading}
+                className={cn(
+                  "w-full h-32 flex flex-col items-center justify-center gap-2 border-2 border-dashed",
+                  errorMessage ? "border-destructive" : "border-muted-foreground/25",
+                  "hover:border-muted-foreground/50 transition-colors"
+                )}
               >
-                <circle 
-                  className="opacity-25" 
-                  cx="12" 
-                  cy="12" 
-                  r="10" 
-                  stroke="currentColor" 
-                  strokeWidth="4"
-                ></circle>
-                <path 
-                  className="opacity-75" 
-                  fill="currentColor" 
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              Uploading...
-            </span>
+                {isUploading ? (
+                  /* Show progress during upload */
+                  <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+                    <Upload className="h-6 w-6 text-muted-foreground animate-pulse" />
+                    <Progress value={progressValue} className="w-full h-2" />
+                    <span className="text-xs text-muted-foreground">
+                      Uploading... {progressValue.toFixed(0)}%
+                    </span>
+                  </div>
+                ) : (
+                  /* Default upload state */
+                  <>
+                    <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-sm font-medium">Click to upload</span>
+                      <span className="text-xs text-muted-foreground">
+                        {allowedTypes.map(type => type.replace('image/', '.')).join(', ')} up to {formatFileSize(maxSize)}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </Button>
+            </motion.div>
           ) : (
-            <span className="flex items-center">
-              <Upload className="mr-2 h-4 w-4" />
-              {previewUrl ? 'Change Image' : 'Select Image'}
-            </span>
+            /* Preview when image is selected */
+            <motion.div
+              key="preview"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={prefersReducedMotion ? { duration: 0.1 } : ANIMATION_CONFIG.spring}
+              className="relative w-full"
+            >
+              {preview && (
+                <div className="relative aspect-square w-full max-w-md mx-auto overflow-hidden rounded-md border border-border">
+                  {/* Image preview */}
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="h-full w-full object-cover"
+                  />
+                  
+                  {/* Remove button */}
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    onClick={clearImage}
+                    disabled={disabled}
+                    className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-md"
+                    aria-label="Remove image"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              
+              {/* File info */}
+              <div className="mt-2 text-center">
+                <p className="text-sm font-medium truncate">
+                  {uploadedFile?.name}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {uploadedFile && formatFileSize(uploadedFile.size)}
+                </p>
+              </div>
+            </motion.div>
           )}
-        </Button>
+        </AnimatePresence>
       </div>
       
-      {/* Error message with animation */}
-      <AnimatePresence>
-        {errorMessage && (
-          <motion.p 
-            id={errorId}
-            className="text-sm font-medium text-destructive flex items-start mt-2"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: prefersReducedMotion ? 0.1 : 0.2 }}
-          >
-            <AlertCircle className="h-4 w-4 mr-1 mt-0.5 flex-shrink-0" />
-            <span>{errorMessage}</span>
-          </motion.p>
-        )}
-      </AnimatePresence>
+      {/* Error message */}
+      {errorMessage && (
+        <div className="flex items-center gap-2 text-destructive text-sm">
+          <AlertCircle className="h-4 w-4" />
+          <p id={errorId}>{errorMessage}</p>
+        </div>
+      )}
       
       {/* Hint text */}
       {hint && !errorMessage && (

@@ -1,57 +1,27 @@
-'use client';
-
 /**
  * Categories Step Component (Client Component)
  * Second step of the wizard for collecting category counts
  */
+'use client';
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Plus, Minus } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWizardStore, COUNTER_CATEGORIES } from '@/stores/wizardStore';
+import Counter from '@/components/feature/tickets/counter.client';
+import { COLOR_THRESHOLDS } from '@/lib/constants/ticketCategories';
 
-// Category definitions with their ranges
+// Category definitions with their ranges and backend mappings
 const CATEGORIES = [
-  { id: 'category1', name: 'Concrete', min: 0, max: 150 },
-  { id: 'category2', name: 'Steel', min: 0, max: 150 },
-  { id: 'category3', name: 'Wood', min: 0, max: 150 },
-  { id: 'category4', name: 'Plastic', min: 0, max: 150 },
-  { id: 'category5', name: 'Glass', min: 0, max: 150 },
-  { id: 'category6', name: 'Other', min: 0, max: 150 },
+  { id: 'category1', name: 'Hangers', min: 0, max: COLOR_THRESHOLDS.MAX, backendName: 'hangers' },
+  { id: 'category2', name: 'Leaners', min: 0, max: COLOR_THRESHOLDS.MAX, backendName: 'leaner6To12' },
+  { id: 'category3', name: 'Downs', min: 0, max: COLOR_THRESHOLDS.MAX, backendName: 'leaner13To24' },
+  { id: 'category4', name: 'Broken', min: 0, max: COLOR_THRESHOLDS.MAX, backendName: 'leaner25To36' },
+  { id: 'category5', name: 'Damaged', min: 0, max: COLOR_THRESHOLDS.MAX, backendName: 'leaner37To48' },
+  { id: 'category6', name: 'Other', min: 0, max: COLOR_THRESHOLDS.MAX, backendName: 'leaner49Plus' },
 ];
-
-// Get gradient color based on count value
-const getCounterGradient = (count: number) => {
-  if (count === 0) {
-    // Red gradient for 0
-    return 'linear-gradient(135deg, hsl(0, 84%, 55%), hsl(0, 84%, 65%))';
-  } else if (count >= 1 && count <= 84) {
-    // Calculate a gradient that shifts from red to yellow based on position in range
-    const percentage = (count - 1) / 83;
-    return `linear-gradient(135deg, 
-      hsl(${Math.round(percentage * 45)}, 90%, 55%), 
-      hsl(${Math.round(percentage * 45 + 5)}, 90%, 65%))`;
-  } else if (count >= 85 && count <= 124) {
-    // Calculate a gradient that shifts from yellow to green based on position in range
-    const percentage = (count - 85) / 39;
-    return `linear-gradient(135deg, 
-      hsl(${Math.round(45 + percentage * 97)}, 80%, 45%), 
-      hsl(${Math.round(45 + percentage * 97 + 5)}, 80%, 55%))`;
-  } else {
-    // Gold gradient for 125-150
-    return 'linear-gradient(135deg, hsl(43, 96%, 50%), hsl(43, 96%, 60%))';
-  }
-};
-
-// Get solid color for fallback and compatibility
-const getCounterColor = (count: number) => {
-  if (count === 0) return 'var(--counter-red)';
-  if (count >= 1 && count <= 84) return 'var(--counter-yellow)';
-  if (count >= 85 && count <= 124) return 'var(--counter-green)';
-  return 'var(--counter-gold)';
-};
 
 export function CategoriesStep() {
   const { categories, updateCategory, setCategories } = useWizardStore();
@@ -85,34 +55,15 @@ export function CategoriesStep() {
     }
   };
   
-  // Increment counter value
-  const incrementCounter = (categoryId: string) => {
-    if (!categories) return;
-    
-    const currentValue = categories[categoryId] || 0;
-    const category = CATEGORIES.find(c => c.id === categoryId);
-    
-    if (category && currentValue < category.max) {
-      updateCategory(categoryId, currentValue + 1);
-    }
-  };
-  
-  // Decrement counter value
-  const decrementCounter = (categoryId: string) => {
-    if (!categories) return;
-    
-    const currentValue = categories[categoryId] || 0;
-    const category = CATEGORIES.find(c => c.id === categoryId);
-    
-    if (category && currentValue > category.min) {
-      updateCategory(categoryId, currentValue - 1);
-    }
-  };
-  
   // Get the current value of a category
   const getCategoryValue = (categoryId: string) => {
     if (!categories) return 0;
     return categories[categoryId] || 0;
+  };
+  
+  // Handle counter value change
+  const handleCounterChange = (categoryId: string, value: number) => {
+    updateCategory(categoryId, value);
   };
   
   // Calculate progress percentage
@@ -174,41 +125,15 @@ export function CategoriesStep() {
         <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
           <h4 className="text-center text-lg font-medium mb-6">{currentCategory.name}</h4>
           
-          <div className="flex flex-col items-center">
-            <div 
-              className="text-7xl font-bold mb-6 transition-all duration-300"
-              style={{ 
-                background: getCounterGradient(getCategoryValue(currentCategory.id)),
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-                color: getCounterColor(getCategoryValue(currentCategory.id)) // Fallback for browsers that don't support background-clip
-              }}
-            >
-              {getCategoryValue(currentCategory.id)}
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-14 w-14 rounded-full touch-target"
-                onClick={() => decrementCounter(currentCategory.id)}
-                disabled={getCategoryValue(currentCategory.id) <= currentCategory.min}
-              >
-                <Minus className="h-6 w-6" />
-              </Button>
-              
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-14 w-14 rounded-full touch-target"
-                onClick={() => incrementCounter(currentCategory.id)}
-                disabled={getCategoryValue(currentCategory.id) >= currentCategory.max}
-              >
-                <Plus className="h-6 w-6" />
-              </Button>
-            </div>
+          <div className="flex justify-center">
+            <Counter 
+              label={currentCategory.name}
+              value={getCategoryValue(currentCategory.id)}
+              onChange={(value) => handleCounterChange(currentCategory.id, value)}
+              min={currentCategory.min}
+              max={currentCategory.max}
+              size="lg"
+            />
           </div>
         </div>
       </motion.div>

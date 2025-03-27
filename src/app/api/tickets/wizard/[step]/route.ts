@@ -4,7 +4,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { validateRequest, handleApiError } from '@/lib/api/middleware';
+import { handleApiError, authenticateRequest } from '@/lib/api/middleware';
 import { 
   basicInfoSchema, 
   categoriesSchema, 
@@ -16,298 +16,402 @@ import {
   ImageUploadData,
   CompleteWizardData
 } from '@/lib/validation/wizardSchemas';
+import ticketService from '@/lib/services/ticketService';
+import { 
+  validateBasicInfo, 
+  isActiveJobsite, 
+  isActiveTruck 
+} from '../step1/validators';
+import { validateCategories, calculateTotalCount } from '../step2/validators';
+import { validateImageUpload, validateSingleImage } from '../step3/validators';
+import { finalizeTicket } from '../complete/finalizers';
+import { ValidationError, NotFoundError, ErrorCodes } from '@/lib/errors/error-types';
+import { z } from 'zod';
 
-// Define types for our mock storage
-interface SessionBasicInfo {
-  date: string;
-  truckId: string;
-  jobsiteId: string;
-  updatedAt: string;
-}
-
-// Extended categories data with metadata
-interface SessionCategories {
-  [key: string]: number;
-  totalCount: number;
-  updatedAt: string;
-}
-
-interface SessionImageUpload {
-  images: ImageData[];
-  count: number;
-  updatedAt: string;
-}
-
-interface SessionData {
-  basicInfo?: SessionBasicInfo;
-  categories?: SessionCategories;
-  imageUpload?: SessionImageUpload;
-}
-
-interface TicketData extends CompleteWizardData {
-  id: string;
-  status: string;
-  submittedAt: string;
-  userId: string;
-  createdAt: string;
-}
-
-// Mock storage for development (replace with Firebase in production)
-const mockStorage = {
-  tickets: new Map<string, TicketData>(),
-  sessions: new Map<string, SessionData>(),
-  
-  // Get session data
-  getSession(sessionId: string): SessionData {
-    return this.sessions.get(sessionId) || {};
-  },
-  
-  // Update session data
-  updateSession(sessionId: string, data: Partial<SessionData>): SessionData {
-    const existingData = this.getSession(sessionId);
-    const updatedData = { ...existingData, ...data };
-    this.sessions.set(sessionId, updatedData);
-    return updatedData;
-  },
-  
-  // Create a ticket
-  createTicket(ticketData: Omit<TicketData, 'id' | 'createdAt'>): string {
-    const ticketId = `TICKET-${Date.now().toString().slice(-6)}`;
-    const completeTicket: TicketData = { 
-      id: ticketId, 
-      ...ticketData, 
-      createdAt: new Date().toISOString() 
-    };
-    this.tickets.set(ticketId, completeTicket);
-    return ticketId;
-  }
-};
-
-export async function POST(
-  request: Request,
+/**
+ * POST handler for saving wizard step data
+ * 
+ * @route POST /api/tickets/wizard/[step]
+ * @authentication Required
+ */
+export const POST = authenticateRequest(async (
+  userId,
+  request,
   { params }: { params: { step: string } }
-) {
+) => {
   const { step } = params;
   
   try {
     // Handle different steps based on the dynamic parameter
     switch (step) {
       case 'step1':
-        return validateRequest(basicInfoSchema, handleBasicInfo)(request);
+        return await handleStep1Request(request, userId);
       case 'step2':
-        return validateRequest(categoriesSchema, handleCategories)(request);
+        return await handleStep2Request(request, userId);
       case 'step3':
-        return validateRequest(imageUploadSchema, handleImageUpload)(request);
+        return await handleStep3Request(request, userId);
       case 'complete':
-        return validateRequest(completeWizardSchema, handleCompletion)(request);
+        return await handleCompleteRequest(request, userId);
       default:
-        return NextResponse.json(
-          { success: false, message: `Invalid step: ${step}` },
-          { status: 400 }
+        throw new ValidationError(
+          `Invalid step: ${step}`,
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400
         );
     }
   } catch (error) {
     return handleApiError(error, `Failed to process ${step}`);
   }
-}
+});
 
-// Extract session ID from request
+/**
+ * Extract session ID from request headers
+ * @param request Request object
+ * @returns Session ID string
+ */
 async function getSessionId(request: Request): Promise<string> {
-  // In a real implementation, this would come from a cookie or auth token
-  // For now, we'll use a header for simplicity
   const sessionId = request.headers.get('x-session-id');
   if (!sessionId) {
-    throw new Error('Session ID is required');
+    throw new ValidationError(
+      'Session ID is required',
+      ErrorCodes.VALIDATION_REQUIRED_FIELD,
+      400,
+      { field: 'sessionId' }
+    );
   }
   return sessionId;
 }
 
-// Step 1: Basic Info handler
-async function handleBasicInfo(data: BasicInfoData, request: Request) {
+/**
+ * Process a request for step 1 (Basic Info)
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response object
+ */
+async function handleStep1Request(request: Request, userId: string) {
+  try {
+    // Parse and validate the request body
+    const body = await request.json();
+    
+    try {
+      const data = basicInfoSchema.parse(body);
+      return await handleBasicInfo(data, request, userId);
+    } catch (validationError) {
+      if (validationError instanceof z.ZodError) {
+        throw new ValidationError(
+          'Invalid basic info data',
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400,
+          validationError.errors
+        );
+      }
+      throw validationError;
+    }
+  } catch (error) {
+    return handleApiError(error, 'Failed to process basic info');
+  }
+}
+
+/**
+ * Process a request for step 2 (Categories)
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response object
+ */
+async function handleStep2Request(request: Request, userId: string) {
+  try {
+    // Parse and validate the request body
+    const body = await request.json();
+    
+    try {
+      const data = categoriesSchema.parse(body);
+      return await handleCategories(data, request, userId);
+    } catch (validationError) {
+      if (validationError instanceof z.ZodError) {
+        throw new ValidationError(
+          'Invalid categories data',
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400,
+          validationError.errors
+        );
+      }
+      throw validationError;
+    }
+  } catch (error) {
+    return handleApiError(error, 'Failed to process categories');
+  }
+}
+
+/**
+ * Process a request for step 3 (Image Upload)
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response object
+ */
+async function handleStep3Request(request: Request, userId: string) {
+  try {
+    // Parse and validate the request body
+    const body = await request.json();
+    
+    try {
+      const data = imageUploadSchema.parse(body);
+      return await handleImageUpload(data, request, userId);
+    } catch (validationError) {
+      if (validationError instanceof z.ZodError) {
+        throw new ValidationError(
+          'Invalid image upload data',
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400,
+          validationError.errors
+        );
+      }
+      throw validationError;
+    }
+  } catch (error) {
+    return handleApiError(error, 'Failed to process image upload');
+  }
+}
+
+/**
+ * Process a request for the completion step
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response object
+ */
+async function handleCompleteRequest(request: Request, userId: string) {
+  try {
+    // Parse and validate the request body
+    const body = await request.json();
+    
+    try {
+      const data = completeWizardSchema.parse(body);
+      return await handleCompletion(data, request, userId);
+    } catch (validationError) {
+      if (validationError instanceof z.ZodError) {
+        throw new ValidationError(
+          'Invalid completion data',
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400,
+          validationError.errors
+        );
+      }
+      throw validationError;
+    }
+  } catch (error) {
+    return handleApiError(error, 'Failed to complete wizard');
+  }
+}
+
+/**
+ * Handle Basic Info step data
+ * @param data Validated basic info data
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response with saved basic info
+ */
+async function handleBasicInfo(data: BasicInfoData, request: Request, userId: string) {
   try {
     // Get session ID
     const sessionId = await getSessionId(request);
     
-    // Validate date is not in the future
-    const selectedDate = new Date(data.date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Additional validation using the step1 validators
+    await validateBasicInfo(data);
     
-    if (selectedDate > today) {
-      return NextResponse.json({
-        success: false,
-        message: 'Date cannot be in the future',
-        errors: { date: ['Date cannot be in the future'] }
-      }, { status: 400 });
+    // Validate jobsite and truck are active
+    const [jobsiteActive, truckActive] = await Promise.all([
+      isActiveJobsite(data.jobsiteId),
+      isActiveTruck(data.truckId)
+    ]);
+    
+    if (!jobsiteActive) {
+      throw new ValidationError(
+        'Selected jobsite is not active',
+        ErrorCodes.VALIDATION_INVALID_REFERENCE,
+        400,
+        { jobsiteId: ['Selected jobsite is not active'] }
+      );
     }
     
-    // Store data in session (would be Firestore in production)
-    const sessionData = mockStorage.updateSession(sessionId, {
-      basicInfo: {
-        ...data,
-        updatedAt: new Date().toISOString()
-      }
+    if (!truckActive) {
+      throw new ValidationError(
+        'Selected truck is not active',
+        ErrorCodes.VALIDATION_INVALID_REFERENCE,
+        400,
+        { truckId: ['Selected truck is not active'] }
+      );
+    }
+    
+    // Save wizard state using ticket service
+    await ticketService.saveWizardState(userId, 1, {
+      date: data.date,
+      truckNumber: data.truckId,
+      truckNickname: data.truckId, // In a real app, would fetch the nickname
+      jobsite: data.jobsiteId,
+      jobsiteName: data.jobsiteId, // In a real app, would fetch the name
     });
     
-    // Return success response with the updated data
+    // Return success response
     return NextResponse.json({ 
       success: true,
       message: 'Basic info saved successfully',
-      data: sessionData.basicInfo
+      step: 1,
+      date: data.date,
+      truckId: data.truckId,
+      jobsiteId: data.jobsiteId,
+      updatedAt: new Date().toISOString()
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'Session ID is required') {
-      return NextResponse.json({
-        success: false,
-        message: 'Session ID is required',
-      }, { status: 401 });
-    }
     return handleApiError(error, 'Failed to save basic info');
   }
 }
 
-// Step 2: Categories handler
-async function handleCategories(data: CategoriesData, request: Request) {
+/**
+ * Handle Categories step data
+ * @param data Validated categories data
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response with saved categories data
+ */
+async function handleCategories(data: CategoriesData, request: Request, userId: string) {
   try {
     // Get session ID
     const sessionId = await getSessionId(request);
     
-    // Ensure all required categories are present
-    const requiredCategories = ['category1', 'category2', 'category3', 'category4', 'category5', 'category6'];
-    const missingCategories = requiredCategories.filter(cat => !(cat in data));
+    // Additional validation using the step2 validators
+    await validateCategories(data);
     
-    if (missingCategories.length > 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Missing required categories',
-        errors: {
-          categories: [`Missing required categories: ${missingCategories.join(', ')}`]
-        }
-      }, { status: 400 });
-    }
+    // Calculate total count
+    const totalCount = calculateTotalCount(data);
     
-    // Calculate total count across all categories
-    const totalCount = Object.values(data).reduce((sum, count) => sum + count, 0);
-    
-    // Store data in session (would be Firestore in production)
-    const updatedCategories = {
-      ...data,
-      totalCount,
-      updatedAt: new Date().toISOString()
-    };
-    
-    const sessionData = mockStorage.updateSession(sessionId, {
-      categories: updatedCategories
+    // Save wizard state using ticket service
+    await ticketService.saveWizardState(userId, 2, {
+      categories: {
+        hangers: data.category1 || 0,
+        leaner6To12: data.category2 || 0,
+        leaner13To24: data.category3 || 0,
+        leaner25To36: data.category4 || 0,
+        leaner37To48: data.category5 || 0,
+        leaner49Plus: data.category6 || 0,
+      },
+      hangers: data.category1 || 0,
+      leaner6To12: data.category2 || 0,
+      leaner13To24: data.category3 || 0,
+      leaner25To36: data.category4 || 0,
+      leaner37To48: data.category5 || 0,
+      leaner49Plus: data.category6 || 0,
     });
     
-    // Return success response with the updated data
+    // Return success response
     return NextResponse.json({ 
       success: true,
       message: 'Categories saved successfully',
-      data: sessionData.categories
+      step: 2,
+      totalCount,
+      categories: {
+        hangers: data.category1 || 0,
+        leaner6To12: data.category2 || 0,
+        leaner13To24: data.category3 || 0,
+        leaner25To36: data.category4 || 0,
+        leaner37To48: data.category5 || 0,
+        leaner49Plus: data.category6 || 0,
+      },
+      updatedAt: new Date().toISOString()
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'Session ID is required') {
-      return NextResponse.json({
-        success: false,
-        message: 'Session ID is required',
-      }, { status: 401 });
-    }
     return handleApiError(error, 'Failed to save categories');
   }
 }
 
-// Step 3: Image Upload handler
-async function handleImageUpload(data: ImageUploadData, request: Request) {
+/**
+ * Handle Image Upload step data
+ * @param data Validated image upload data
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response with saved image data
+ */
+async function handleImageUpload(data: ImageUploadData, request: Request, userId: string) {
   try {
     // Get session ID
     const sessionId = await getSessionId(request);
     
-    // Validate image count
-    if (data.images.length > 10) {
-      return NextResponse.json({
-        success: false,
-        message: 'Too many images',
-        errors: { images: ['Maximum 10 images allowed'] }
-      }, { status: 400 });
-    }
+    // Additional validation using the step3 validators
+    await validateImageUpload(data);
     
-    // In a real implementation, we would move images from temporary storage to permanent storage
-    // For now, we'll just store the image metadata
+    // In a real implementation, this would process image files
+    // Here we're assuming the images are already uploaded and have URLs
     
-    // Store data in session (would be Firestore in production)
-    const sessionData = mockStorage.updateSession(sessionId, {
-      imageUpload: {
-        images: data.images,
-        count: data.images.length,
-        updatedAt: new Date().toISOString()
-      }
+    // Save wizard state using ticket service
+    await ticketService.saveWizardState(userId, 3, {
+      images: data.images.map(img => 
+        // Convert image data to File objects for storage
+        // In a real implementation, we'd have actual File objects here
+        new File([], img.id, { type: 'image/jpeg' })
+      ),
     });
     
-    // Return success response with the updated data
+    // Return success response
     return NextResponse.json({ 
       success: true,
-      message: 'Image upload data saved successfully',
-      data: sessionData.imageUpload
+      message: 'Images saved successfully',
+      step: 3,
+      imageCount: data.images.length,
+      images: data.images.map(img => ({
+        id: img.id,
+        url: img.url
+      })),
+      updatedAt: new Date().toISOString()
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'Session ID is required') {
-      return NextResponse.json({
-        success: false,
-        message: 'Session ID is required',
-      }, { status: 401 });
-    }
-    return handleApiError(error, 'Failed to save image upload data');
+    return handleApiError(error, 'Failed to save images');
   }
 }
 
-// Complete: Finalize the ticket
-async function handleCompletion(data: CompleteWizardData, request: Request) {
+/**
+ * Handle wizard completion
+ * @param data Validated completion data
+ * @param request Request object
+ * @param userId User ID
+ * @returns Response with created ticket details
+ */
+async function handleCompletion(data: CompleteWizardData, request: Request, userId: string) {
   try {
     // Get session ID
     const sessionId = await getSessionId(request);
     
     // Validate all required steps are completed
-    const { basicInfo, categories } = data;
+    const { basicInfo, categories, imageUpload } = data;
     
     // Additional validation for the complete step
     if (!basicInfo || !categories) {
-      return NextResponse.json({
-        success: false,
-        message: 'Missing required data',
-        errors: {
+      throw new ValidationError(
+        'Missing required data',
+        ErrorCodes.VALIDATION_REQUIRED_FIELD,
+        400,
+        {
           ...(basicInfo ? {} : { basicInfo: ['Basic info is required'] }),
           ...(categories ? {} : { categories: ['Categories are required'] })
         }
-      }, { status: 400 });
+      );
     }
     
-    // Create the final ticket (would be in Firestore in production)
-    const ticketData = {
-      ...data,
-      status: 'submitted',
-      submittedAt: new Date().toISOString(),
-      userId: 'mock-user-id', // In production, this would come from authentication
-    };
+    // Finalize the ticket using the finalizer
+    const result = await finalizeTicket(
+      userId,
+      basicInfo,
+      categories,
+      imageUpload || { images: [] }
+    );
     
-    const ticketId = mockStorage.createTicket(ticketData);
-    
-    // Clear the session data after successful submission
-    mockStorage.sessions.delete(sessionId);
+    // Clear the wizard state after successful submission
+    await ticketService.clearWizardState(userId);
     
     return NextResponse.json({ 
       success: true,
       message: 'Ticket created successfully',
-      ticketId,
-      submittedAt: ticketData.submittedAt
+      id: result.ticketId,
+      submittedAt: new Date().toISOString()
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'Session ID is required') {
-      return NextResponse.json({
-        success: false,
-        message: 'Session ID is required',
-      }, { status: 401 });
-    }
     return handleApiError(error, 'Failed to create ticket');
   }
 }

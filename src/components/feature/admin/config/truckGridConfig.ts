@@ -5,21 +5,10 @@
  * @source Admin_Flows.md - "Manage Reference Data" section
  */
 
-import { DataGridColumn } from '../data-grid/DataGrid.client';
-import { FilterOption } from '../data-grid/FilterBar.client';
-import { Action } from '../data-grid/ActionBar.client';
-
-// Truck type definition based on the data model
-export interface Truck {
-  id: string;
-  truckNumber: string;
-  nickname: string;
-  status: 'active' | 'inactive' | 'maintenance';
-  lastUsed?: Date;
-  notes?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { DataGridColumn } from '../data-grid/data-grid.client';
+import { FilterOption } from '../data-grid/filter-bar.client';
+import { Action } from '../data-grid/action-bar.client';
+import { Truck } from './types';
 
 // Column definitions for the truck data grid
 export const truckColumns: DataGridColumn<Truck>[] = [

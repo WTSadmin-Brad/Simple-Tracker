@@ -1,28 +1,38 @@
 /**
- * ActionBar.client.tsx
- * Action bar component for admin data management pages
+ * Action Bar Component
  * 
- * @source Admin_Flows.md - "Data Management" section
+ * Client component for data grid action controls.
+ * Provides buttons for creating, editing, deleting, and other actions.
  */
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+'use client';
 
-// Action type
+import { useState, useCallback, useMemo } from 'react';
+import { Button } from '@/components/ui/button.client';
+import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.client';
+import { cn } from '@/lib/utils';
+import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, RefreshIcon, AlertCircleIcon } from 'lucide-react';
+
+export type ActionType = 'create' | 'edit' | 'delete' | 'export' | 'refresh' | 'custom';
+
 export interface Action {
-  id: string;
+  type: ActionType;
+  id?: string;
   label: string;
-  icon?: string;
-  variant?: 'primary' | 'secondary' | 'danger' | 'success' | 'warning';
+  icon?: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   requiresSelection?: boolean;
+  variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link' | 'primary' | 'danger' | 'success' | 'warning';
+  className?: string;
+  isLoading?: boolean;
   confirmationRequired?: boolean;
   confirmationMessage?: string;
+  confirmationTitle?: string;
 }
 
-// Action bar props
-export interface ActionBarProps {
+interface ActionBarProps {
   actions: Action[];
   selectedCount?: number;
   position?: 'top' | 'bottom' | 'floating';
@@ -30,169 +40,172 @@ export interface ActionBarProps {
 }
 
 /**
- * Action bar component for admin data management pages
- * 
- * TODO: Implement the following features:
- * - Action buttons with icons
- * - Confirmation dialogs for destructive actions
- * - Disabled state for actions requiring selection
- * - Floating action bar for mobile
+ * ActionBar component
+ * Displays action buttons for data grid operations
  */
-export function ActionBar({
-  actions,
-  selectedCount = 0,
-  position = 'top',
-  className = ''
-}: ActionBarProps) {
+export default function ActionBar({ actions, selectedCount = 0, position = 'top', className }: ActionBarProps) {
   const [confirmAction, setConfirmAction] = useState<Action | null>(null);
-  
-  // Get button variant class
-  const getVariantClass = (variant: Action['variant']) => {
-    switch (variant) {
-      case 'primary':
-        return 'bg-primary-600 hover:bg-primary-700 text-white';
-      case 'secondary':
-        return 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700';
-      case 'danger':
-        return 'bg-red-600 hover:bg-red-700 text-white';
-      case 'success':
-        return 'bg-green-600 hover:bg-green-700 text-white';
-      case 'warning':
-        return 'bg-yellow-600 hover:bg-yellow-700 text-white';
-      default:
-        return 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700';
-    }
-  };
-  
-  // Handle action click
-  const handleActionClick = (action: Action) => {
-    if (action.confirmationRequired) {
-      setConfirmAction(action);
-    } else {
-      action.onClick();
-    }
-  };
-  
+
+  // Memoize the default icons for better performance
+  const defaultIcons = useMemo(() => ({
+    create: <PlusIcon className="h-4 w-4 mr-2" />,
+    edit: <PencilIcon className="h-4 w-4 mr-2" />,
+    delete: <TrashIcon className="h-4 w-4 mr-2" />,
+    export: <DownloadIcon className="h-4 w-4 mr-2" />,
+    refresh: <RefreshIcon className="h-4 w-4 mr-2" />,
+    custom: null
+  }), []);
+
+  // Memoize the default variants for better performance
+  const defaultVariants = useMemo(() => ({
+    create: 'default',
+    edit: 'outline',
+    delete: 'destructive',
+    export: 'outline',
+    refresh: 'outline',
+    custom: 'outline'
+  }), []);
+
   // Handle confirmation
-  const handleConfirm = () => {
+  const handleConfirm = useCallback(() => {
     if (confirmAction) {
       confirmAction.onClick();
       setConfirmAction(null);
     }
-  };
-  
+  }, [confirmAction]);
+
   // Handle cancel confirmation
-  const handleCancelConfirm = () => {
+  const handleCancelConfirm = useCallback(() => {
     setConfirmAction(null);
-  };
-  
+  }, []);
+
   // Get position class
-  const getPositionClass = () => {
+  const getPositionClass = useCallback(() => {
     switch (position) {
-      case 'top':
-        return 'border-b border-gray-200 dark:border-gray-700';
-      case 'bottom':
-        return 'border-t border-gray-200 dark:border-gray-700';
       case 'floating':
-        return 'fixed bottom-4 right-4 left-4 sm:left-auto rounded-lg shadow-lg z-10';
+        return 'fixed bottom-4 right-4 shadow-lg z-50';
+      case 'bottom':
+        return 'border-t mt-4';
       default:
         return '';
     }
-  };
-  
+  }, [position]);
+
+  // Memoize the selection text for better performance
+  const selectionText = useMemo(() => {
+    if (selectedCount === 0) return null;
+    return (
+      <div className="text-sm text-gray-500 flex items-center">
+        <span className="font-medium">{selectedCount}</span>
+        <span className="ml-1">{selectedCount === 1 ? 'item' : 'items'} selected</span>
+      </div>
+    );
+  }, [selectedCount]);
+
+  // Render a button for each action
+  const renderActionButton = useCallback((action: Action) => {
+    const { 
+      type, 
+      id, 
+      label, 
+      icon, 
+      onClick, 
+      disabled, 
+      requiresSelection, 
+      variant, 
+      className, 
+      isLoading, 
+      confirmationRequired 
+    } = action;
+    
+    const buttonIcon = icon || defaultIcons[type];
+    const buttonVariant = mapVariant(variant || defaultVariants[type]);
+    const isDisabled = disabled || (requiresSelection && selectedCount === 0) || isLoading;
+    
+    const handleActionClick = () => {
+      if (confirmationRequired) {
+        setConfirmAction(action);
+      } else {
+        onClick();
+      }
+    };
+    
+    return (
+      <Button
+        key={id || `${type}-${label}`}
+        variant={buttonVariant}
+        size="sm"
+        onClick={handleActionClick}
+        disabled={isDisabled}
+        className={cn("flex items-center", className)}
+      >
+        {isLoading ? (
+          <span className="w-4 h-4 mr-2 border-2 border-t-transparent border-current rounded-full animate-spin" />
+        ) : buttonIcon}
+        {label}
+      </Button>
+    );
+  }, [defaultIcons, defaultVariants, selectedCount]);
+
   return (
     <>
-      <div className={`bg-white dark:bg-gray-800 px-4 py-3 ${getPositionClass()} ${className}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Selected count */}
-          {selectedCount > 0 && (
-            <span className="text-sm text-gray-700 dark:text-gray-300 mr-2">
-              {selectedCount} item{selectedCount !== 1 ? 's' : ''} selected
-            </span>
+      <Card className={cn("p-3", getPositionClass(), className)}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {actions.map(renderActionButton)}
+          </div>
+          {selectionText}
+        </div>
+      </Card>
+      
+      {/* Confirmation Dialog */}
+      <Dialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{confirmAction?.confirmationTitle || 'Confirm Action'}</DialogTitle>
+            <DialogDescription>
+              {confirmAction?.confirmationMessage || 'Are you sure you want to perform this action?'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {confirmAction?.type === 'delete' && (
+            <div className="flex items-center p-3 my-2 bg-red-50 text-red-800 rounded-md">
+              <AlertCircleIcon className="h-5 w-5 mr-2 flex-shrink-0" />
+              <p className="text-sm">This action cannot be undone. The data will be permanently deleted.</p>
+            </div>
           )}
           
-          {/* Action buttons */}
-          {actions.map(action => {
-            const isDisabled = action.disabled || (action.requiresSelection && selectedCount === 0);
-            
-            return (
-              <button
-                key={action.id}
-                type="button"
-                className={`inline-flex items-center px-3 py-1.5 border text-sm font-medium rounded-md ${
-                  getVariantClass(action.variant)
-                } ${
-                  isDisabled ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-                onClick={() => !isDisabled && handleActionClick(action)}
-                disabled={isDisabled}
-              >
-                {action.icon && <span className="mr-1">{action.icon}</span>}
-                {action.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      
-      {/* Confirmation dialog */}
-      {confirmAction && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-              <div className="absolute inset-0 bg-gray-500 dark:bg-gray-900 opacity-75"></div>
-            </div>
-            
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"
+          <DialogFooter className="flex justify-end gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={handleCancelConfirm}
             >
-              <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="sm:flex sm:items-start">
-                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900 sm:mx-0 sm:h-10 sm:w-10">
-                    <svg className="h-6 w-6 text-red-600 dark:text-red-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">
-                      Confirm {confirmAction.label}
-                    </h3>
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {confirmAction.confirmationMessage || `Are you sure you want to ${confirmAction.label.toLowerCase()}? This action cannot be undone.`}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  className={`w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 text-base font-medium text-white ${
-                    confirmAction.variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700'
-                  } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm`}
-                  onClick={handleConfirm}
-                >
-                  Confirm
-                </button>
-                <button
-                  type="button"
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                  onClick={handleCancelConfirm}
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      )}
+              Cancel
+            </Button>
+            <Button
+              variant={confirmAction?.type === 'delete' ? 'destructive' : 'default'}
+              onClick={handleConfirm}
+            >
+              {confirmAction?.type === 'delete' ? 'Delete' : 'Confirm'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-export default ActionBar;
+// Helper function to map legacy variants to new variants
+function mapVariant(variant: Action['variant']): any {
+  switch (variant) {
+    case 'primary':
+      return 'default';
+    case 'danger':
+      return 'destructive';
+    case 'success':
+    case 'warning':
+      return 'outline';
+    default:
+      return variant;
+  }
+}

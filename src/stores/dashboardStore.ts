@@ -199,13 +199,113 @@ const createDefaultLayout = (): DashboardLayout => ({
       title: 'Recent Activity',
       size: 'medium',
       position: { x: 0, y: 4, width: 6, height: 2 },
-      activityTypes: ['ticket', 'user', 'system'],
+      activityTypes: ['login', 'ticket', 'workday'],
       maxItems: 10,
       showUser: true,
     },
   ],
   lastModified: new Date().toISOString(),
 });
+
+// Action creators
+const updateLayoutAction = (layoutId: string, updates: Partial<DashboardLayout>) => 
+  (set: any, get: any) => {
+    const { layouts } = get();
+    
+    set({
+      layouts: layouts.map(layout => 
+        layout.id === layoutId
+          ? { 
+              ...layout, 
+              ...updates, 
+              lastModified: new Date().toISOString() 
+            }
+          : layout
+      )
+    });
+  };
+
+const deleteLayoutAction = (layoutId: string) => 
+  (set: any, get: any) => {
+    const { layouts, activeLayoutId } = get();
+    
+    // Prevent deleting the last layout
+    if (layouts.length <= 1) {
+      console.warn('Cannot delete the last layout');
+      return;
+    }
+    
+    // Filter out the layout to delete
+    const updatedLayouts = layouts.filter(layout => layout.id !== layoutId);
+    
+    // If the active layout is being deleted, set a new active layout
+    let newActiveLayoutId = activeLayoutId;
+    if (activeLayoutId === layoutId) {
+      // Try to find a default layout, or use the first available
+      const defaultLayout = updatedLayouts.find(layout => layout.isDefault);
+      newActiveLayoutId = defaultLayout ? defaultLayout.id : updatedLayouts[0].id;
+    }
+    
+    set({
+      layouts: updatedLayouts,
+      activeLayoutId: newActiveLayoutId
+    });
+  };
+
+const addCardAction = (layoutId: string, card: CardConfig) => 
+  (set: any, get: any) => {
+    const { layouts } = get();
+    
+    set({
+      layouts: layouts.map(layout => 
+        layout.id === layoutId
+          ? { 
+              ...layout, 
+              cards: [...layout.cards, card],
+              lastModified: new Date().toISOString() 
+            }
+          : layout
+      )
+    });
+  };
+
+const updateCardAction = (layoutId: string, cardId: string, updates: Partial<CardConfig>) => 
+  (set: any, get: any) => {
+    const { layouts } = get();
+    
+    set({
+      layouts: layouts.map(layout => 
+        layout.id === layoutId
+          ? { 
+              ...layout, 
+              cards: layout.cards.map(card => 
+                card.id === cardId
+                  ? { ...card, ...updates }
+                  : card
+              ),
+              lastModified: new Date().toISOString() 
+            }
+          : layout
+      )
+    });
+  };
+
+const deleteCardAction = (layoutId: string, cardId: string) => 
+  (set: any, get: any) => {
+    const { layouts } = get();
+    
+    set({
+      layouts: layouts.map(layout => 
+        layout.id === layoutId
+          ? { 
+              ...layout, 
+              cards: layout.cards.filter(card => card.id !== cardId),
+              lastModified: new Date().toISOString() 
+            }
+          : layout
+      )
+    });
+  };
 
 // Create the dashboard store with persistence
 export const useDashboardStore = create<DashboardState>()(
@@ -219,127 +319,41 @@ export const useDashboardStore = create<DashboardState>()(
       // Layout methods
       setLayouts: (layouts) => set({ layouts }),
       
-      addLayout: (layout) => set((state) => ({
-        layouts: [...state.layouts, { ...layout, lastModified: new Date().toISOString() }],
+      addLayout: (layout) => set(state => ({
+        layouts: [...state.layouts, layout]
       })),
       
-      updateLayout: (layoutId, updates) => set((state) => ({
-        layouts: state.layouts.map(layout => 
-          layout.id === layoutId 
-            ? { ...layout, ...updates, lastModified: new Date().toISOString() } 
-            : layout
-        ),
-      })),
+      updateLayout: (layoutId, updates) => updateLayoutAction(layoutId, updates)(set, get),
       
-      deleteLayout: (layoutId) => set((state) => {
-        // Don't delete if it's the only layout or if it's the active layout
-        if (state.layouts.length <= 1 || state.activeLayoutId === layoutId) {
-          return state;
-        }
-        
-        // Set active layout to default if deleting the active layout
-        const newState: Partial<DashboardState> = {
-          layouts: state.layouts.filter(layout => layout.id !== layoutId),
-        };
-        
-        if (state.activeLayoutId === layoutId) {
-          const defaultLayout = state.layouts.find(layout => layout.isDefault) || state.layouts[0];
-          newState.activeLayoutId = defaultLayout.id;
-        }
-        
-        return newState as DashboardState;
-      }),
+      deleteLayout: (layoutId) => deleteLayoutAction(layoutId)(set, get),
       
-      setActiveLayout: (layoutId) => set((state) => {
-        const layoutExists = state.layouts.some(layout => layout.id === layoutId);
-        return layoutExists ? { activeLayoutId: layoutId } : state;
-      }),
+      setActiveLayout: (layoutId) => set({ activeLayoutId: layoutId }),
       
       // Card methods
-      addCard: (layoutId, card) => set((state) => ({
-        layouts: state.layouts.map(layout => 
-          layout.id === layoutId 
-            ? { 
-                ...layout, 
-                cards: [...layout.cards, card],
-                lastModified: new Date().toISOString() 
-              } 
-            : layout
-        ),
-      })),
+      addCard: (layoutId, card) => addCardAction(layoutId, card)(set, get),
       
-      updateCard: (layoutId, cardId, updates) => set((state) => ({
-        layouts: state.layouts.map(layout => 
-          layout.id === layoutId 
-            ? { 
-                ...layout, 
-                cards: layout.cards.map(card => 
-                  card.id === cardId 
-                    ? { ...card, ...updates } 
-                    : card
-                ),
-                lastModified: new Date().toISOString() 
-              } 
-            : layout
-        ),
-      })),
+      updateCard: (layoutId, cardId, updates) => updateCardAction(layoutId, cardId, updates)(set, get),
       
-      deleteCard: (layoutId, cardId) => set((state) => ({
-        layouts: state.layouts.map(layout => 
-          layout.id === layoutId 
-            ? { 
-                ...layout, 
-                cards: layout.cards.filter(card => card.id !== cardId),
-                lastModified: new Date().toISOString() 
-              } 
-            : layout
-        ),
-      })),
+      deleteCard: (layoutId, cardId) => deleteCardAction(layoutId, cardId)(set, get),
       
-      updateCardPosition: (layoutId, cardId, position) => set((state) => ({
-        layouts: state.layouts.map(layout => 
-          layout.id === layoutId 
-            ? { 
-                ...layout, 
-                cards: layout.cards.map(card => 
-                  card.id === cardId 
-                    ? { ...card, position } 
-                    : card
-                ),
-                lastModified: new Date().toISOString() 
-              } 
-            : layout
-        ),
-      })),
+      updateCardPosition: (layoutId, cardId, position) => 
+        updateCardAction(layoutId, cardId, { position })(set, get),
       
-      updateCardSize: (layoutId, cardId, size) => set((state) => ({
-        layouts: state.layouts.map(layout => 
-          layout.id === layoutId 
-            ? { 
-                ...layout, 
-                cards: layout.cards.map(card => 
-                  card.id === cardId 
-                    ? { ...card, size } 
-                    : card
-                ),
-                lastModified: new Date().toISOString() 
-              } 
-            : layout
-        ),
-      })),
+      updateCardSize: (layoutId, cardId, size) => 
+        updateCardAction(layoutId, cardId, { size })(set, get),
       
       // Edit mode methods
       setEditMode: (isEditMode) => set({ isEditMode }),
       
       // Helper methods
       getActiveLayout: () => {
-        const state = get();
-        return state.layouts.find(layout => layout.id === state.activeLayoutId) || null;
+        const { layouts, activeLayoutId } = get();
+        return layouts.find(layout => layout.id === activeLayoutId) || null;
       },
       
       getDefaultLayout: () => {
-        const state = get();
-        return state.layouts.find(layout => layout.isDefault) || state.layouts[0] || createDefaultLayout();
+        const { layouts } = get();
+        return layouts.find(layout => layout.isDefault) || layouts[0];
       },
       
       createDefaultLayout,
@@ -347,6 +361,38 @@ export const useDashboardStore = create<DashboardState>()(
     {
       name: 'simple-tracker-dashboard',
       storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        layouts: state.layouts,
+        activeLayoutId: state.activeLayoutId
+      })
     }
   )
 );
+
+// Selector hooks for optimized component rendering
+export const useLayouts = () => ({
+  layouts: useDashboardStore(state => state.layouts),
+  setLayouts: useDashboardStore(state => state.setLayouts),
+  addLayout: useDashboardStore(state => state.addLayout),
+  updateLayout: useDashboardStore(state => state.updateLayout),
+  deleteLayout: useDashboardStore(state => state.deleteLayout)
+});
+
+export const useActiveLayout = () => ({
+  activeLayoutId: useDashboardStore(state => state.activeLayoutId),
+  activeLayout: useDashboardStore(state => state.getActiveLayout()),
+  setActiveLayout: useDashboardStore(state => state.setActiveLayout)
+});
+
+export const useCards = () => ({
+  addCard: useDashboardStore(state => state.addCard),
+  updateCard: useDashboardStore(state => state.updateCard),
+  deleteCard: useDashboardStore(state => state.deleteCard),
+  updateCardPosition: useDashboardStore(state => state.updateCardPosition),
+  updateCardSize: useDashboardStore(state => state.updateCardSize)
+});
+
+export const useEditMode = () => ({
+  isEditMode: useDashboardStore(state => state.isEditMode),
+  setEditMode: useDashboardStore(state => state.setEditMode)
+});

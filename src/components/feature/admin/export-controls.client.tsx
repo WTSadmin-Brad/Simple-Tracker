@@ -7,19 +7,61 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button.client';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.client';
 import { Label } from '@/components/ui/label.client';
 import { Calendar } from '@/components/ui/calendar.client';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.client';
+import { format } from 'date-fns';
+import { CalendarIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-interface ExportControlsProps {
-  onExport: (config: any) => void;
+export type ExportType = 'tickets' | 'workdays';
+export type ExportFormat = 'csv' | 'excel' | 'pdf';
+
+export interface ExportConfig {
+  type: ExportType;
+  startDate: Date | null;
+  endDate: Date | null;
+  format: ExportFormat;
 }
 
-export default function ExportControls({ onExport }: ExportControlsProps) {
-  // TODO: Implement export configuration state and handlers
+interface ExportControlsProps {
+  onExport: (config: ExportConfig) => Promise<void>;
+  isLoading?: boolean;
+}
+
+export default function ExportControls({ onExport, isLoading = false }: ExportControlsProps) {
+  const [exportConfig, setExportConfig] = useState<ExportConfig>({
+    type: 'tickets',
+    startDate: null,
+    endDate: null,
+    format: 'csv'
+  });
+
+  const handleTypeChange = useCallback((value: ExportType) => {
+    setExportConfig(prev => ({ ...prev, type: value }));
+  }, []);
+
+  const handleFormatChange = useCallback((value: ExportFormat) => {
+    setExportConfig(prev => ({ ...prev, format: value }));
+  }, []);
+
+  const handleStartDateChange = useCallback((date: Date | null) => {
+    setExportConfig(prev => ({ ...prev, startDate: date }));
+  }, []);
+
+  const handleEndDateChange = useCallback((date: Date | null) => {
+    setExportConfig(prev => ({ ...prev, endDate: date }));
+  }, []);
+
+  const handleExport = useCallback(async () => {
+    await onExport(exportConfig);
+  }, [onExport, exportConfig]);
+
+  const isExportDisabled = !exportConfig.startDate || !exportConfig.endDate || isLoading;
   
   return (
     <Card className="p-6">
@@ -28,7 +70,10 @@ export default function ExportControls({ onExport }: ExportControlsProps) {
       <div className="space-y-6">
         <div>
           <h4 className="text-sm font-medium mb-2">Export Type</h4>
-          <RadioGroup defaultValue="tickets">
+          <RadioGroup 
+            value={exportConfig.type} 
+            onValueChange={(value) => handleTypeChange(value as ExportType)}
+          >
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="tickets" id="tickets" />
               <Label htmlFor="tickets">Tickets</Label>
@@ -45,18 +90,76 @@ export default function ExportControls({ onExport }: ExportControlsProps) {
           <div className="flex flex-col sm:flex-row gap-4">
             <div>
               <Label htmlFor="start-date" className="mb-1 block">Start Date</Label>
-              {/* TODO: Implement date picker */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="start-date"
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !exportConfig.startDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {exportConfig.startDate ? (
+                      format(exportConfig.startDate, "PPP")
+                    ) : (
+                      <span>Select date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={exportConfig.startDate || undefined}
+                    onSelect={handleStartDateChange}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div>
               <Label htmlFor="end-date" className="mb-1 block">End Date</Label>
-              {/* TODO: Implement date picker */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="end-date"
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !exportConfig.endDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {exportConfig.endDate ? (
+                      format(exportConfig.endDate, "PPP")
+                    ) : (
+                      <span>Select date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={exportConfig.endDate || undefined}
+                    onSelect={handleEndDateChange}
+                    initialFocus
+                    disabled={(date) => 
+                      exportConfig.startDate ? date < exportConfig.startDate : false
+                    }
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </div>
         
         <div>
           <h4 className="text-sm font-medium mb-2">Export Format</h4>
-          <RadioGroup defaultValue="csv">
+          <RadioGroup 
+            value={exportConfig.format}
+            onValueChange={(value) => handleFormatChange(value as ExportFormat)}
+          >
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="csv" id="csv" />
               <Label htmlFor="csv">CSV</Label>
@@ -72,7 +175,20 @@ export default function ExportControls({ onExport }: ExportControlsProps) {
           </RadioGroup>
         </div>
         
-        <Button className="w-full sm:w-auto">Generate Export</Button>
+        <Button 
+          className="w-full sm:w-auto"
+          onClick={handleExport}
+          disabled={isExportDisabled}
+        >
+          {isLoading ? (
+            <>
+              <span className="w-4 h-4 mr-2 border-2 border-t-transparent border-current rounded-full animate-spin" />
+              Generating...
+            </>
+          ) : (
+            'Generate Export'
+          )}
+        </Button>
       </div>
     </Card>
   );

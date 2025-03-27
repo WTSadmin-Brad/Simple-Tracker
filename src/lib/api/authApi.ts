@@ -30,12 +30,14 @@ export async function login(
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(credentials)
+        body: JSON.stringify(credentials),
+        credentials: 'include' // Important for cookies
       }
     );
     
     if (!response.ok) {
-      throw new Error('Authentication failed');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Authentication failed');
     }
     
     return await response.json();
@@ -60,12 +62,14 @@ export async function logout(): Promise<ApiResponse<void>> {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include' // Important for cookies
       }
     );
     
     if (!response.ok) {
-      throw new Error('Logout failed');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Logout failed');
     }
     
     return await response.json();
@@ -90,12 +94,14 @@ export async function getCurrentUser(): Promise<ApiResponse<UserData>> {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include' // Important for cookies
       }
     );
     
     if (!response.ok) {
-      throw new Error('Failed to get current user');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to get current user');
     }
     
     return await response.json();
@@ -120,12 +126,14 @@ export async function refreshToken(): Promise<ApiResponse<AuthResponse>> {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include' // Important for cookies
       }
     );
     
     if (!response.ok) {
-      throw new Error('Failed to refresh token');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to refresh token');
     }
     
     return await response.json();

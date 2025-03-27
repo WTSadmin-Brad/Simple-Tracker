@@ -19,11 +19,17 @@ import {
 } from '@/components/ui/select.client';
 import { cn } from '@/lib/utils';
 
+/**
+ * Interface for select options
+ */
 export interface SelectOption {
   value: string;
   label: string;
 }
 
+/**
+ * Interface for select field props
+ */
 interface SelectFieldProps {
   label: string;
   options: SelectOption[];
@@ -38,6 +44,11 @@ interface SelectFieldProps {
   id?: string;
 }
 
+/**
+ * SelectField component
+ * 
+ * A reusable select input field with validation and error handling.
+ */
 export function SelectField({
   label,
   options,
@@ -58,6 +69,7 @@ export function SelectField({
   
   return (
     <div className="space-y-2">
+      {/* Field label */}
       <div className="flex items-center justify-between">
         <Label 
           htmlFor={fieldId}
@@ -71,6 +83,7 @@ export function SelectField({
         </Label>
       </div>
       
+      {/* Select dropdown */}
       <Select
         value={value}
         onValueChange={onChange}
@@ -103,6 +116,7 @@ export function SelectField({
         </SelectContent>
       </Select>
       
+      {/* Error message */}
       {error && (
         <p 
           id={errorId}
@@ -112,6 +126,7 @@ export function SelectField({
         </p>
       )}
       
+      {/* Hint text */}
       {hint && !error && (
         <p 
           id={hintId}

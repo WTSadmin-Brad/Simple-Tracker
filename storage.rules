@@ -1,0 +1,60 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+    
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isImageType() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    function isValidSize() {
+      return request.resource.size <= 10 * 1024 * 1024; // 10MB
+    }
+    
+    // Default rule - deny all
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+    
+    // User images
+    match /users/{userId}/{allPaths=**} {
+      // User can read and write their own files
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) && isImageType() && isValidSize();
+    }
+    
+    // Ticket images
+    match /tickets/{ticketId}/images/{imageId} {
+      // Allow read access to the ticket owner or admin
+      allow read: if resource.metadata.userId == request.auth.uid || isAdmin();
+      
+      // Allow write access only to the owner creating the image
+      allow create: if request.resource.metadata.userId == request.auth.uid && 
+                     isImageType() && 
+                     isValidSize();
+                     
+      // Prevent updates to uploaded images (create new ones instead)
+      allow update, delete: if false;
+    }
+    
+    // Special access for admins
+    match /admin/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

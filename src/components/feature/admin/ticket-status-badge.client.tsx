@@ -1,9 +1,16 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-type TicketStatus = 'active' | 'images_archived' | 'fully_archived';
+export type TicketStatus = 'active' | 'images_archived' | 'fully_archived';
+
+interface StatusConfig {
+  label: string;
+  variant: 'default' | 'outline' | 'secondary' | 'destructive';
+  className: string;
+}
 
 interface TicketStatusBadgeProps {
   status: TicketStatus;
@@ -15,8 +22,8 @@ interface TicketStatusBadgeProps {
  * Displays a color-coded badge for ticket status
  */
 export default function TicketStatusBadge({ status, className }: TicketStatusBadgeProps) {
-  // Determine badge color based on status
-  const getStatusConfig = (status: TicketStatus) => {
+  // Memoize status configuration to avoid recalculation on re-renders
+  const statusConfig = useMemo<StatusConfig>(() => {
     switch (status) {
       case 'active':
         return {
@@ -43,16 +50,14 @@ export default function TicketStatusBadge({ status, className }: TicketStatusBad
           className: 'bg-gray-100 text-gray-800 hover:bg-gray-200'
         };
     }
-  };
-
-  const config = getStatusConfig(status);
+  }, [status]);
 
   return (
     <Badge 
       variant="outline"
-      className={cn(config.className, className)}
+      className={cn(statusConfig.className, className)}
     >
-      {config.label}
+      {statusConfig.label}
     </Badge>
   );
 }

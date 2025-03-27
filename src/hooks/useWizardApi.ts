@@ -5,6 +5,9 @@
  * loading states, and retry capabilities.
  * 
  * Provides a consistent interface for all wizard-related API operations.
+ * 
+ * @source directory-structure.md - "Custom Hooks" section
+ * @source Ticket_Submission.md - "Wizard Flow" section
  */
 
 import { useCallback, useState } from 'react';
@@ -17,42 +20,96 @@ import {
   CompleteWizardData
 } from '@/lib/validation/wizardSchemas';
 
+/**
+ * Response structure for wizard step operations
+ */
 interface WizardStepResponse {
+  /** Whether the operation was successful */
   success: boolean;
+  /** Optional message from the server */
   message?: string;
+  /** Optional data returned from the server */
   data?: unknown;
+  /** ID of the saved step */
   stepId?: string;
+  /** Timestamp when the step was saved */
   savedAt?: string;
 }
 
+/**
+ * Response structure for wizard completion
+ */
 interface CompleteWizardResponse {
+  /** Whether the operation was successful */
   success: boolean;
+  /** ID of the created ticket */
   ticketId?: string;
+  /** Optional message from the server */
   message?: string;
+  /** URL to redirect to after completion */
   redirectUrl?: string;
 }
 
+/**
+ * Return type for useWizardApi hook
+ */
 interface UseWizardApiReturn {
+  /** Whether any API operation is in progress */
   isLoading: boolean;
+  /** Error message from the most recent operation */
   error: string | null;
+  /** Save basic info (step 1) */
   saveBasicInfo: (data: BasicInfoData) => Promise<boolean>;
+  /** Save categories (step 2) */
   saveCategories: (data: CategoriesData) => Promise<boolean>;
+  /** Save image upload (step 3) */
   saveImageUpload: (data: ImageUploadData) => Promise<boolean>;
-  completeWizard: (data: CompleteWizardData) => Promise<{ success: boolean; ticketId?: string; redirectUrl?: string }>;
-  getWizardState: () => Promise<{ stepData?: any; currentStep?: number; lastUpdated?: string } | null>;
+  /** Complete wizard and create ticket */
+  completeWizard: (data: CompleteWizardData) => Promise<{ 
+    success: boolean; 
+    ticketId?: string; 
+    redirectUrl?: string 
+  }>;
+  /** Get current wizard state */
+  getWizardState: () => Promise<{ 
+    stepData?: any; 
+    currentStep?: number; 
+    lastUpdated?: string 
+  } | null>;
+  /** Clear wizard state */
   clearWizardState: () => Promise<boolean>;
+  /** Clear any error messages */
   clearError: () => void;
 }
 
+/**
+ * Hook for handling wizard API calls
+ * Provides a consistent interface for all wizard-related API operations
+ * with proper error handling, loading states, and retry capabilities.
+ * 
+ * @returns Object containing wizard API methods and state
+ */
 export function useWizardApi(): UseWizardApiReturn {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   
-  const clearError = useCallback(() => setError(null), []);
+  /**
+   * Clear any error messages
+   */
+  const clearError = useCallback((): void => {
+    setError(null);
+  }, []);
   
   /**
    * Generic API call handler with error handling and retries
+   * 
+   * @param url API endpoint URL
+   * @param method HTTP method
+   * @param data Request data
+   * @param options Configuration options
+   * @returns Promise resolving to the API response
+   * @throws Error if the API call fails
    */
   const handleApiCall = useCallback(async <T, R>(
     url: string, 
@@ -166,6 +223,9 @@ export function useWizardApi(): UseWizardApiReturn {
 
   /**
    * Save basic info (step 1)
+   * 
+   * @param data Basic info data
+   * @returns Promise resolving to success status
    */
   const saveBasicInfo = useCallback(async (data: BasicInfoData): Promise<boolean> => {
     try {
@@ -190,6 +250,9 @@ export function useWizardApi(): UseWizardApiReturn {
   
   /**
    * Save categories (step 2)
+   * 
+   * @param data Categories data
+   * @returns Promise resolving to success status
    */
   const saveCategories = useCallback(async (data: CategoriesData): Promise<boolean> => {
     try {
@@ -214,6 +277,9 @@ export function useWizardApi(): UseWizardApiReturn {
   
   /**
    * Save image upload (step 3)
+   * 
+   * @param data Image upload data
+   * @returns Promise resolving to success status
    */
   const saveImageUpload = useCallback(async (data: ImageUploadData): Promise<boolean> => {
     try {
@@ -238,6 +304,9 @@ export function useWizardApi(): UseWizardApiReturn {
   
   /**
    * Complete wizard and create ticket
+   * 
+   * @param data Complete wizard data
+   * @returns Promise resolving to completion status
    */
   const completeWizard = useCallback(async (
     data: CompleteWizardData
@@ -273,8 +342,14 @@ export function useWizardApi(): UseWizardApiReturn {
 
   /**
    * Get current wizard state
+   * 
+   * @returns Promise resolving to wizard state or null if not found
    */
-  const getWizardState = useCallback(async (): Promise<{ stepData?: any; currentStep?: number; lastUpdated?: string } | null> => {
+  const getWizardState = useCallback(async (): Promise<{ 
+    stepData?: any; 
+    currentStep?: number; 
+    lastUpdated?: string 
+  } | null> => {
     try {
       const response = await handleApiCall<void, { 
         success: boolean; 
@@ -320,6 +395,8 @@ export function useWizardApi(): UseWizardApiReturn {
 
   /**
    * Clear wizard state
+   * 
+   * @returns Promise resolving to success status
    */
   const clearWizardState = useCallback(async (): Promise<boolean> => {
     try {

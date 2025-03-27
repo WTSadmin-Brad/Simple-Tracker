@@ -1,365 +1,348 @@
+/**
+ * Ticket Detail View Component
+ * 
+ * Client component for displaying detailed ticket information.
+ * Shows all ticket data with image gallery and metadata.
+ */
+
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useMemo } from 'react';
+import Image from 'next/image';
 import { format } from 'date-fns';
-import { 
-  CalendarIcon, 
-  TruckIcon, 
-  MapPinIcon, 
-  UserIcon, 
-  ClockIcon,
-  ImageIcon,
-  FileSpreadsheetIcon,
-  ArrowLeftIcon,
-  ArchiveIcon
-} from 'lucide-react';
-import { motion, useReducedMotion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button.client';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import TicketStatusBadge from './TicketStatusBadge.client';
-import TicketArchiveControls from './TicketArchiveControls.client';
-import { getTicketById, Ticket } from '@/lib/services/ticketService';
-import { fadeVariants } from '@/lib/animations/variants';
-import { defaultSpring } from '@/lib/animations/springs';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.client';
+import { TicketStatusBadge } from '@/components/feature/admin';
+import { cn } from '@/lib/utils';
+import { ChevronLeft, ChevronRight, ZoomIn, Download, Loader2 } from 'lucide-react';
 
-interface TicketDetailViewProps {
-  ticketId: string;
+export interface TicketImage {
+  id: string;
+  url: string;
+  thumbnailUrl: string;
+  fileName: string;
+  uploadedAt: Date;
 }
 
-/**
- * TicketDetailView component
- * Displays detailed information about a ticket, including counts, images, and archive information
- */
-export default function TicketDetailView({ ticketId }: TicketDetailViewProps) {
-  const router = useRouter();
-  const shouldReduceMotion = useReducedMotion();
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('details');
-  
-  // Fetch ticket data
-  useEffect(() => {
-    const fetchTicket = async () => {
-      try {
-        setIsLoading(true);
-        const ticketData = await getTicketById(ticketId);
-        
-        if (!ticketData) {
-          setError('Ticket not found');
-        } else {
-          setTicket(ticketData);
-        }
-      } catch (err) {
-        console.error('Error fetching ticket:', err);
-        setError('Failed to load ticket data');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+export interface TicketCategory {
+  name: string;
+  count: number;
+  color?: string;
+}
+
+export interface TicketDetail {
+  id: string;
+  date: Date;
+  truck: string;
+  jobsite: string;
+  status: 'active' | 'images_archived' | 'fully_archived';
+  categories: TicketCategory[];
+  images: TicketImage[];
+  submittedBy: string;
+  submittedAt: Date;
+  notes?: string;
+}
+
+interface TicketDetailViewProps {
+  ticket?: TicketDetail;
+  isLoading?: boolean;
+  onClose?: () => void;
+  onDownloadImage?: (imageUrl: string, fileName: string) => Promise<void>;
+  className?: string;
+}
+
+export default function TicketDetailView({
+  ticket,
+  isLoading = false,
+  onClose,
+  onDownloadImage,
+  className
+}: TicketDetailViewProps) {
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [isDownloading, setIsDownloading] = useState<string | null>(null);
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  // Memoize the active image
+  const activeImage = useMemo(() => {
+    if (!ticket?.images?.length) return null;
+    return ticket.images[activeImageIndex];
+  }, [ticket?.images, activeImageIndex]);
+
+  // Handle image navigation
+  const handlePrevImage = useCallback(() => {
+    if (!ticket?.images?.length) return;
+    setActiveImageIndex((prev) => (prev === 0 ? ticket.images.length - 1 : prev - 1));
+  }, [ticket?.images]);
+
+  const handleNextImage = useCallback(() => {
+    if (!ticket?.images?.length) return;
+    setActiveImageIndex((prev) => (prev === ticket.images.length - 1 ? 0 : prev + 1));
+  }, [ticket?.images]);
+
+  // Handle image download
+  const handleDownloadImage = useCallback(async () => {
+    if (!activeImage || !onDownloadImage) return;
     
-    fetchTicket();
-  }, [ticketId]);
-  
-  // Handle ticket status change
-  const handleStatusChange = (updatedTicket: Ticket) => {
-    setTicket(updatedTicket);
-  };
-  
-  // Render loading state
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-10 w-24" />
+    setIsDownloading(activeImage.id);
+    try {
+      await onDownloadImage(activeImage.url, activeImage.fileName);
+    } catch (error) {
+      console.error('Error downloading image:', error);
+    } finally {
+      setIsDownloading(null);
+    }
+  }, [activeImage, onDownloadImage]);
+
+  // Toggle zoom state
+  const toggleZoom = useCallback(() => {
+    setIsZoomed((prev) => !prev);
+  }, []);
+
+  // Memoize the image gallery
+  const imageGallery = useMemo(() => {
+    if (isLoading) {
+      return (
+        <div className="space-y-4">
+          <Skeleton className="h-64 w-full rounded-md" />
+          <div className="flex justify-between">
+            <Skeleton className="h-8 w-20" />
+            <Skeleton className="h-8 w-20" />
+          </div>
+          <div className="flex gap-2 overflow-x-auto py-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="h-16 w-16 flex-shrink-0 rounded-md" />
+            ))}
+          </div>
         </div>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-8 w-64 mb-2" />
-            <Skeleton className="h-4 w-40" />
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-            <Skeleton className="h-40 w-full" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  
-  // Render error state
-  if (error || !ticket) {
+      );
+    }
+
+    if (!ticket?.images?.length) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-gray-100 rounded-md">
+          <p className="text-gray-500">No images available</p>
+        </div>
+      );
+    }
+
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Button 
-            variant="outline" 
-            onClick={() => router.back()}
-            className="flex items-center"
+      <div className="space-y-4">
+        <div className={cn(
+          "relative h-64 bg-gray-100 rounded-md overflow-hidden transition-all duration-300",
+          isZoomed && "fixed inset-0 z-50 h-full bg-black/90 flex items-center justify-center"
+        )}>
+          <Image
+            src={activeImage?.url || ''}
+            alt={`Ticket image ${activeImageIndex + 1}`}
+            fill
+            className={cn(
+              "object-contain",
+              isZoomed ? "p-4" : "p-0"
+            )}
+          />
+          
+          <div className={cn(
+            "absolute inset-x-0 bottom-0 flex justify-between p-2 bg-black/50",
+            isZoomed ? "p-4" : "p-2"
+          )}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleZoom}
+              className="text-white hover:bg-black/20"
+            >
+              <ZoomIn className="h-4 w-4" />
+              {isZoomed ? 'Exit Fullscreen' : 'Fullscreen'}
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDownloadImage}
+              disabled={isDownloading === activeImage?.id}
+              className="text-white hover:bg-black/20"
+            >
+              {isDownloading === activeImage?.id ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-1" />
+              )}
+              Download
+            </Button>
+          </div>
+        </div>
+        
+        <div className="flex justify-between">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePrevImage}
+            disabled={ticket.images.length <= 1}
           >
-            <ArrowLeftIcon className="h-4 w-4 mr-2" />
-            Back to Tickets
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Previous
+          </Button>
+          <span className="text-sm text-gray-500">
+            {activeImageIndex + 1} of {ticket.images.length}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNextImage}
+            disabled={ticket.images.length <= 1}
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
-        <Alert variant="destructive">
-          <AlertDescription>
-            {error || 'Ticket not found'}. Please try again or select a different ticket.
-          </AlertDescription>
-        </Alert>
-        <Button onClick={() => router.push('/admin/tickets')}>
-          View All Tickets
-        </Button>
+        
+        <div className="flex gap-2 overflow-x-auto py-2">
+          {ticket.images.map((image, index) => (
+            <button
+              key={image.id}
+              onClick={() => setActiveImageIndex(index)}
+              className={cn(
+                "relative h-16 w-16 flex-shrink-0 rounded-md overflow-hidden border-2",
+                activeImageIndex === index ? "border-primary" : "border-transparent"
+              )}
+            >
+              <Image
+                src={image.thumbnailUrl}
+                alt={`Thumbnail ${index + 1}`}
+                fill
+                className="object-cover"
+              />
+            </button>
+          ))}
+        </div>
       </div>
     );
-  }
-  
-  // Calculate counter color classes based on values
-  const getCounterColorClass = (value: number) => {
-    if (value === 0) return 'bg-red-50 text-red-700 border-red-200';
-    if (value >= 1 && value <= 84) return 'bg-amber-50 text-amber-700 border-amber-200';
-    if (value >= 85 && value <= 124) return 'bg-green-50 text-green-700 border-green-200';
-    return 'bg-yellow-50 text-yellow-700 border-yellow-200'; // 125-150 (gold)
-  };
-  
-  return (
-    <motion.div 
-      className="space-y-6"
-      initial="hidden"
-      animate="visible"
-      variants={shouldReduceMotion ? {} : fadeVariants}
-      transition={shouldReduceMotion ? { duration: 0 } : defaultSpring}
-    >
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <Button 
-          variant="outline" 
-          onClick={() => router.back()}
-          className="flex items-center"
-        >
-          <ArrowLeftIcon className="h-4 w-4 mr-2" />
-          Back to Tickets
-        </Button>
-        
-        <TicketArchiveControls 
-          ticket={ticket} 
-          onStatusChange={handleStatusChange} 
-        />
-      </div>
-      
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-xl">Ticket {ticket.id}</CardTitle>
-              <CardDescription>
-                Submitted on {format(ticket.submissionDate, 'MMM d, yyyy h:mm a')}
-              </CardDescription>
-            </div>
-            <TicketStatusBadge 
-              status={ticket.archiveStatus} 
-              className="w-fit" 
-            />
+  }, [
+    isLoading, 
+    ticket?.images, 
+    activeImageIndex, 
+    activeImage, 
+    isZoomed, 
+    isDownloading, 
+    handlePrevImage, 
+    handleNextImage, 
+    handleDownloadImage, 
+    toggleZoom
+  ]);
+
+  // Memoize the ticket details
+  const ticketDetails = useMemo(() => {
+    if (isLoading) {
+      return (
+        <div className="space-y-4">
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-6 w-1/2" />
+          <Skeleton className="h-6 w-2/3" />
+          <Skeleton className="h-6 w-3/4" />
+        </div>
+      );
+    }
+
+    if (!ticket) {
+      return (
+        <div className="text-center py-8">
+          <p className="text-gray-500">No ticket details available</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between items-center">
+            <h3 className="font-semibold">Ticket ID</h3>
+            <TicketStatusBadge status={ticket.status} />
           </div>
-        </CardHeader>
+          <p>{ticket.id}</p>
+        </div>
         
-        <CardContent className="space-y-6">
-          {/* Ticket metadata */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center p-4 border rounded-md bg-gray-50">
-              <CalendarIcon className="h-5 w-5 mr-3 text-gray-500" />
-              <div>
-                <p className="text-sm font-medium">Date</p>
-                <p className="text-lg">{format(ticket.date, 'MMM d, yyyy')}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center p-4 border rounded-md bg-gray-50">
-              <TruckIcon className="h-5 w-5 mr-3 text-gray-500" />
-              <div>
-                <p className="text-sm font-medium">Truck</p>
-                <p className="text-lg">{ticket.truckNickname || ticket.truckNumber}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center p-4 border rounded-md bg-gray-50">
-              <MapPinIcon className="h-5 w-5 mr-3 text-gray-500" />
-              <div>
-                <p className="text-sm font-medium">Jobsite</p>
-                <p className="text-lg">{ticket.jobsiteName || ticket.jobsite}</p>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1">
+            <h3 className="font-semibold">Date</h3>
+            <p>{format(ticket.date, 'MMMM d, yyyy')}</p>
           </div>
           
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-3 mb-4">
-              <TabsTrigger value="details">Details</TabsTrigger>
-              <TabsTrigger value="images">Images ({ticket.imageCount})</TabsTrigger>
-              <TabsTrigger value="archive">Archive Info</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="details" className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className={`p-4 border rounded-md ${getCounterColorClass(ticket.hangers)}`}>
-                  <p className="text-sm font-medium">Hangers</p>
-                  <p className="text-2xl font-bold">{ticket.hangers}</p>
-                </div>
-                
-                <div className={`p-4 border rounded-md ${getCounterColorClass(ticket.leaner6To12)}`}>
-                  <p className="text-sm font-medium">Leaner 6-12&quot;</p>
-                  <p className="text-2xl font-bold">{ticket.leaner6To12}</p>
-                </div>
-                
-                <div className={`p-4 border rounded-md ${getCounterColorClass(ticket.leaner13To24)}`}>
-                  <p className="text-sm font-medium">Leaner 13-24&quot;</p>
-                  <p className="text-2xl font-bold">{ticket.leaner13To24}</p>
-                </div>
-                
-                <div className={`p-4 border rounded-md ${getCounterColorClass(ticket.leaner25To36)}`}>
-                  <p className="text-sm font-medium">Leaner 25-36&quot;</p>
-                  <p className="text-2xl font-bold">{ticket.leaner25To36}</p>
-                </div>
-                
-                <div className={`p-4 border rounded-md ${getCounterColorClass(ticket.leaner37To48)}`}>
-                  <p className="text-sm font-medium">Leaner 37-48&quot;</p>
-                  <p className="text-2xl font-bold">{ticket.leaner37To48}</p>
-                </div>
-                
-                <div className={`p-4 border rounded-md ${getCounterColorClass(ticket.leaner49Plus)}`}>
-                  <p className="text-sm font-medium">Leaner 49&quot;+</p>
-                  <p className="text-2xl font-bold">{ticket.leaner49Plus}</p>
-                </div>
-              </div>
-              
-              <div className="p-4 border rounded-md bg-blue-50 text-blue-700 border-blue-200">
-                <p className="text-sm font-medium">Total Count</p>
-                <p className="text-3xl font-bold">{ticket.total}</p>
-              </div>
-              
-              <div className="p-4 border rounded-md bg-gray-50">
-                <div className="flex items-center mb-2">
-                  <UserIcon className="h-4 w-4 mr-2 text-gray-500" />
-                  <p className="text-sm font-medium">Submitted by</p>
-                </div>
-                <p>{ticket.userId}</p>
-              </div>
-              
-              <div className="p-4 border rounded-md bg-gray-50">
-                <div className="flex items-center mb-2">
-                  <ClockIcon className="h-4 w-4 mr-2 text-gray-500" />
-                  <p className="text-sm font-medium">Submission Time</p>
-                </div>
-                <p>{format(ticket.submissionDate, 'MMM d, yyyy h:mm:ss a')}</p>
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="images">
-              {ticket.imageCount > 0 ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {ticket.thumbnails?.map((thumbnail, index) => (
-                      <div 
-                        key={index} 
-                        className="relative aspect-square border rounded-md overflow-hidden bg-gray-100"
-                      >
-                        {/* In a real implementation, this would use a proper image URL */}
-                        <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
-                          <ImageIcon className="h-8 w-8 text-gray-400" />
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-black bg-opacity-50 text-white text-xs">
-                          Image {index + 1}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {ticket.archiveStatus === 'images_archived' && (
-                    <Alert className="bg-amber-50 border-amber-200">
-                      <AlertDescription className="flex items-center text-amber-700">
-                        <ImageIcon className="h-4 w-4 mr-2" />
-                        Images have been archived. They may take longer to retrieve.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              ) : (
-                <Alert>
-                  <AlertDescription>
-                    No images attached to this ticket.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </TabsContent>
-            
-            <TabsContent value="archive">
-              {ticket.archiveStatus === 'active' ? (
-                <Alert>
-                  <AlertDescription>
-                    This ticket is active and has not been archived.
-                  </AlertDescription>
-                </Alert>
-              ) : (
-                <div className="space-y-4">
-                  <div className="p-4 border rounded-md bg-gray-50">
-                    <div className="flex items-center mb-2">
-                      <ClockIcon className="h-4 w-4 mr-2 text-gray-500" />
-                      <p className="text-sm font-medium">Archive Date</p>
-                    </div>
-                    <p>{ticket.archiveDate ? format(ticket.archiveDate, 'MMM d, yyyy h:mm a') : 'N/A'}</p>
-                  </div>
-                  
-                  {ticket.archiveStatus === 'fully_archived' && ticket.archiveFile && (
-                    <div className="p-4 border rounded-md bg-gray-50">
-                      <div className="flex items-center mb-2">
-                        <FileSpreadsheetIcon className="h-4 w-4 mr-2 text-gray-500" />
-                        <p className="text-sm font-medium">Archive File</p>
-                      </div>
-                      <p className="text-sm break-all">{ticket.archiveFile}</p>
-                      {ticket.archiveRow && (
-                        <Badge variant="outline" className="mt-2">
-                          Row {ticket.archiveRow}
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                  
-                  {ticket.archiveStatus === 'images_archived' && (
-                    <Alert className="bg-amber-50 border-amber-200">
-                      <AlertDescription className="flex items-center text-amber-700">
-                        <ImageIcon className="h-4 w-4 mr-2" />
-                        Only images have been archived. Ticket data is still active.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  
-                  {ticket.archiveStatus === 'fully_archived' && (
-                    <Alert className="bg-slate-50 border-slate-200">
-                      <AlertDescription className="flex items-center text-slate-700">
-                        <ArchiveIcon className="h-4 w-4 mr-2" />
-                        This ticket has been fully archived. Data and images have been moved to long-term storage.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </CardContent>
+          <div className="flex flex-col gap-1">
+            <h3 className="font-semibold">Submitted</h3>
+            <p>{format(ticket.submittedAt, 'MMM d, yyyy h:mm a')}</p>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <h3 className="font-semibold">Truck</h3>
+            <p>{ticket.truck}</p>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <h3 className="font-semibold">Jobsite</h3>
+            <p>{ticket.jobsite}</p>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <h3 className="font-semibold">Submitted By</h3>
+            <p>{ticket.submittedBy}</p>
+          </div>
+        </div>
         
-        <CardFooter className="flex justify-between">
-          <p className="text-sm text-gray-500">
-            Ticket ID: {ticket.id}
-          </p>
-        </CardFooter>
-      </Card>
-    </motion.div>
+        <div className="flex flex-col gap-2">
+          <h3 className="font-semibold">Categories</h3>
+          <div className="flex flex-wrap gap-2">
+            {ticket.categories.map((category) => (
+              <Badge 
+                key={category.name}
+                variant="outline"
+                className={cn(
+                  "bg-gray-100",
+                  category.color && `bg-${category.color}-100 text-${category.color}-800`
+                )}
+              >
+                {category.name}: {category.count}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        
+        {ticket.notes && (
+          <div className="flex flex-col gap-1">
+            <h3 className="font-semibold">Notes</h3>
+            <p className="text-sm whitespace-pre-wrap">{ticket.notes}</p>
+          </div>
+        )}
+      </div>
+    );
+  }, [isLoading, ticket]);
+
+  return (
+    <Card className={cn("w-full", className)}>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-lg">Ticket Details</CardTitle>
+        {onClose && (
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue="details" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="images">Images ({ticket?.images?.length || 0})</TabsTrigger>
+          </TabsList>
+          <TabsContent value="details" className="pt-4">
+            {ticketDetails}
+          </TabsContent>
+          <TabsContent value="images" className="pt-4">
+            {imageGallery}
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
   );
 }

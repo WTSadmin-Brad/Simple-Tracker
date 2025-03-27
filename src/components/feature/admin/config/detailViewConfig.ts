@@ -7,7 +7,8 @@
  */
 
 import { format } from 'date-fns';
-import { DetailField } from '../data-grid/DetailPanel.client';
+import { DetailField } from '../data-grid/detail-panel.client';
+import { Ticket, Jobsite, Truck, User } from './types';
 
 // Ticket detail fields configuration
 export const ticketDetailFields: DetailField[] = [

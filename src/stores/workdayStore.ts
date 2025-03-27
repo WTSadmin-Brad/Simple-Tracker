@@ -4,7 +4,8 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import workdayService from '@/lib/services/workdayService';
 
 // Workday interface
 interface Workday {
@@ -33,7 +34,107 @@ interface WorkdayState {
   clearError: () => void;
 }
 
-// Placeholder for the actual store implementation
+// Action creators
+const startWorkdayAction = (workday: Omit<Workday, 'id' | 'status' | 'endTime'>) => 
+  async (set: any) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      // In a real implementation, this would call an API
+      // For now using a simulated delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const newWorkday = {
+        ...workday,
+        status: 'active' as const,
+        endTime: null
+      };
+      
+      // In a real implementation, we would save to the backend
+      // const savedWorkday = await workdayService.startWorkday(newWorkday);
+      
+      set({ 
+        isLoading: false,
+        currentWorkday: newWorkday,
+        error: null
+      });
+    } catch (error) {
+      console.error('Error starting workday:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to start workday'
+      });
+    }
+  };
+
+const endWorkdayAction = (notes: string) => 
+  async (set: any, get: any) => {
+    const { currentWorkday } = get();
+    
+    if (!currentWorkday) {
+      set({ error: 'No active workday found' });
+      return;
+    }
+    
+    set({ isLoading: true, error: null });
+    
+    try {
+      // In a real implementation, this would call an API
+      // For now using a simulated delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const completedWorkday = {
+        ...currentWorkday,
+        status: 'completed' as const,
+        endTime: new Date().toISOString(),
+        notes: notes || currentWorkday.notes
+      };
+      
+      // In a real implementation, we would save to the backend
+      // const savedWorkday = await workdayService.endWorkday(currentWorkday.id, completedWorkday);
+      
+      set({ 
+        isLoading: false,
+        currentWorkday: completedWorkday,
+        recentWorkdays: [completedWorkday, ...get().recentWorkdays].slice(0, 10),
+        error: null
+      });
+    } catch (error) {
+      console.error('Error ending workday:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to end workday'
+      });
+    }
+  };
+
+const fetchRecentWorkdaysAction = () => 
+  async (set: any) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      // In a real implementation, this would call an API
+      // For now using a simulated delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Mock data - in a real implementation, we would fetch from the backend
+      // const recentWorkdays = await workdayService.getRecentWorkdays();
+      const recentWorkdays: Workday[] = [];
+      
+      set({ 
+        isLoading: false,
+        recentWorkdays,
+        error: null
+      });
+    } catch (error) {
+      console.error('Error fetching recent workdays:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch recent workdays'
+      });
+    }
+  };
+
 export const useWorkdayStore = create<WorkdayState>()(
   persist(
     (set, get) => ({
@@ -43,49 +144,38 @@ export const useWorkdayStore = create<WorkdayState>()(
       isLoading: false,
       error: null,
       
-      // Actions - placeholders to be implemented
-      startWorkday: async (workday) => {
-        set({ isLoading: true, error: null });
-        // Placeholder for actual implementation
-        set({ 
-          isLoading: false,
-          currentWorkday: {
-            ...workday,
-            status: 'active',
-            endTime: null
-          }
-        });
-      },
-      endWorkday: async (notes) => {
-        set({ isLoading: true, error: null });
-        // Placeholder for actual implementation
-        const { currentWorkday } = get();
-        if (currentWorkday) {
-          set({
-            isLoading: false,
-            currentWorkday: {
-              ...currentWorkday,
-              status: 'completed',
-              endTime: new Date().toISOString(),
-              notes
-            }
-          });
-        } else {
-          set({
-            isLoading: false,
-            error: 'No active workday found'
-          });
-        }
-      },
-      fetchRecentWorkdays: async () => {
-        set({ isLoading: true, error: null });
-        // Placeholder for actual implementation
-        set({ isLoading: false, recentWorkdays: [] });
-      },
+      // Actions
+      startWorkday: (workday) => startWorkdayAction(workday)(set, get),
+      endWorkday: (notes) => endWorkdayAction(notes)(set, get),
+      fetchRecentWorkdays: () => fetchRecentWorkdaysAction()(set, get),
       clearError: () => set({ error: null })
     }),
     {
       name: 'workday-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        // Only persist these fields
+        currentWorkday: state.currentWorkday,
+        recentWorkdays: state.recentWorkdays
+      })
     }
   )
 );
+
+// Selector hooks for optimized component rendering
+export const useCurrentWorkday = () => ({
+  currentWorkday: useWorkdayStore(state => state.currentWorkday),
+  startWorkday: useWorkdayStore(state => state.startWorkday),
+  endWorkday: useWorkdayStore(state => state.endWorkday)
+});
+
+export const useRecentWorkdays = () => ({
+  recentWorkdays: useWorkdayStore(state => state.recentWorkdays),
+  fetchRecentWorkdays: useWorkdayStore(state => state.fetchRecentWorkdays)
+});
+
+export const useWorkdayStatus = () => ({
+  isLoading: useWorkdayStore(state => state.isLoading),
+  error: useWorkdayStore(state => state.error),
+  clearError: useWorkdayStore(state => state.clearError)
+});

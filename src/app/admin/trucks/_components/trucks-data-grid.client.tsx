@@ -6,11 +6,9 @@
  * for filters, actions, and row selection
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import DataGrid from '@/components/feature/admin/data-grid/DataGrid.client';
-import FilterBar from '@/components/feature/admin/data-grid/FilterBar.client';
-import ActionBar from '@/components/feature/admin/data-grid/ActionBar.client';
+import { useRouter } from 'next/navigation';
+import { DataGrid, FilterBar, ActionBar } from '@/components/feature/admin/data-grid';
+import { useAdminDataGrid } from '@/hooks';
 import { 
   truckColumns, 
   truckFilters, 
@@ -30,135 +28,33 @@ interface TrucksDataGridProps {
 
 export function TrucksDataGrid({ initialData }: TrucksDataGridProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   
-  // State for data grid
-  const [data, setData] = useState<Truck[]>(initialData.trucks);
-  const [selectedItems, setSelectedItems] = useState<Truck[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState<number>(initialData.page);
-  const [totalItems, setTotalItems] = useState<number>(initialData.total);
-  
-  // Initialize filter values from URL search params
-  const getInitialFilters = () => {
-    const filters: Record<string, any> = {};
-    
-    // Status filter
-    filters.status = searchParams.get('status') || 'all';
-    
-    // Search term
-    filters.searchTerm = searchParams.get('search') || '';
-    
-    return filters;
-  };
-  
-  const [filters, setFilters] = useState<Record<string, any>>(getInitialFilters());
-  const [searchTerm, setSearchTerm] = useState<string>(searchParams.get('search') || '');
-  
-  // Update URL with current filters and search term
-  const updateUrl = useCallback(() => {
-    const params = new URLSearchParams();
-    
-    // Add status filter
-    if (filters.status && filters.status !== 'all') {
-      params.set('status', filters.status);
-    }
-    
-    // Add search term
-    if (searchTerm) {
-      params.set('search', searchTerm);
-    }
-    
-    // Add page number
-    if (currentPage > 1) {
-      params.set('page', currentPage.toString());
-    }
-    
-    // Update URL
-    router.push(`/admin/trucks?${params.toString()}`);
-  }, [filters, searchTerm, currentPage, router]);
-  
-  // Fetch data when filters or page changes
-  const fetchData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Build query parameters
-      const params = new URLSearchParams();
-      
-      // Add status filter
-      if (filters.status && filters.status !== 'all') {
-        params.set('status', filters.status);
-      }
-      
-      // Add search term
-      if (searchTerm) {
-        params.set('search', searchTerm);
-      }
-      
-      // Add page number
-      params.set('page', currentPage.toString());
-      
-      // Fetch data from API
-      const response = await fetch(`/api/admin/trucks?${params.toString()}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch trucks');
-      }
-      
-      const result = await response.json();
-      
-      // Update state
-      setData(result.trucks);
-      setTotalItems(result.total);
-      
-      // Update URL
-      updateUrl();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filters, searchTerm, currentPage, updateUrl]);
-  
-  // Fetch data when filters or page changes
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-  
-  // Handle filter change
-  const handleFilterChange = (newFilters: Record<string, any>) => {
-    setFilters(newFilters);
-    setCurrentPage(1); // Reset to first page when filters change
-  };
-  
-  // Handle search
-  const handleSearch = (term: string) => {
-    setSearchTerm(term);
-    setCurrentPage(1); // Reset to first page when search changes
-  };
-  
-  // Handle page change
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-  };
-  
-  // Handle row selection
-  const handleSelectionChange = (items: Truck[]) => {
-    setSelectedItems(items);
-  };
-  
-  // Handle row click
-  const handleRowClick = (item: Truck) => {
-    router.push(`/admin/trucks/${item.id}`);
-  };
-  
-  // Handle refresh
-  const handleRefresh = () => {
-    fetchData();
-  };
+  // Use the shared admin data grid hook
+  const {
+    data,
+    isLoading,
+    error,
+    selectedItems,
+    currentPage,
+    totalItems,
+    filters,
+    searchTerm,
+    handleFilterChange,
+    handleSearch,
+    handlePageChange,
+    handleSelectionChange,
+    handleRefresh
+  } = useAdminDataGrid<Truck>({
+    initialData: {
+      items: initialData.trucks,
+      total: initialData.total,
+      page: initialData.page,
+      limit: initialData.limit,
+      totalPages: initialData.totalPages
+    },
+    apiEndpoint: '/admin/trucks',
+    keyField: 'id'
+  });
   
   // Handle actions
   const getActionHandlers = () => {
@@ -180,12 +76,9 @@ export function TrucksDataGrid({ initialData }: TrucksDataGridProps) {
             if (selectedItems.length > 0) {
               try {
                 // Open a dialog to select the new status
-                // This would typically be implemented with a modal component
                 const newStatus = window.prompt('Select new status (active, inactive, maintenance):');
                 
                 if (newStatus && ['active', 'inactive', 'maintenance'].includes(newStatus)) {
-                  setIsLoading(true);
-                  
                   const response = await fetch('/api/admin/trucks/status', {
                     method: 'PATCH',
                     headers: {
@@ -201,50 +94,17 @@ export function TrucksDataGrid({ initialData }: TrucksDataGridProps) {
                     throw new Error('Failed to update truck status');
                   }
                   
-                  // Refresh data
-                  fetchData();
-                  
-                  // Clear selection
-                  setSelectedItems([]);
+                  handleRefresh();
                 }
               } catch (err) {
-                setError(err instanceof Error ? err.message : 'Status update failed');
-              } finally {
-                setIsLoading(false);
+                console.error('Error updating truck status:', err);
+                // Could add toast notification here
               }
             }
             break;
             
-          case 'delete':
-            if (selectedItems.length > 0) {
-              try {
-                setIsLoading(true);
-                
-                const response = await fetch('/api/admin/trucks', {
-                  method: 'DELETE',
-                  headers: {
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                    ids: selectedItems.map(item => item.id)
-                  })
-                });
-                
-                if (!response.ok) {
-                  throw new Error('Failed to delete trucks');
-                }
-                
-                // Refresh data
-                fetchData();
-                
-                // Clear selection
-                setSelectedItems([]);
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Delete failed');
-              } finally {
-                setIsLoading(false);
-              }
-            }
+          case 'refresh':
+            handleRefresh();
             break;
             
           default:
@@ -255,37 +115,40 @@ export function TrucksDataGrid({ initialData }: TrucksDataGridProps) {
   };
   
   return (
-    <>
-      <FilterBar 
-        filters={truckFilters}
-        onFilterChange={handleFilterChange}
-        onSearch={handleSearch}
-        searchPlaceholder="Search trucks..."
-        actionButtons={
-          <ActionBar 
-            actions={getActionHandlers()}
-            selectedCount={selectedItems.length}
-            position="top"
-          />
-        }
-      />
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:justify-between gap-4">
+        <FilterBar
+          filters={truckFilters}
+          onFilterChange={handleFilterChange}
+          onSearch={handleSearch}
+          initialFilters={filters}
+          initialSearchTerm={searchTerm}
+        />
+        
+        <ActionBar
+          actions={getActionHandlers()}
+          selectedCount={selectedItems.length}
+        />
+      </div>
       
-      <DataGrid<Truck>
+      <DataGrid
         columns={truckColumns}
         data={data}
         keyField="id"
         isLoading={isLoading}
         error={error}
-        onRowClick={handleRowClick}
-        onPageChange={handlePageChange}
-        onRefresh={handleRefresh}
+        onRowClick={(item) => router.push(`/admin/trucks/${item.id}`)}
+        pagination={{
+          currentPage,
+          totalPages: Math.ceil(totalItems / initialData.limit),
+          pageSize: initialData.limit,
+          totalItems,
+          onPageChange: handlePageChange
+        }}
+        selectable
         onSelectionChange={handleSelectionChange}
-        currentPage={currentPage}
-        pageSize={initialData.limit}
-        totalItems={totalItems}
-        selectable={true}
       />
-    </>
+    </div>
   );
 }
 

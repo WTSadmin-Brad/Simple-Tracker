@@ -1,8 +1,10 @@
 /**
  * Hook for responsive design media queries
+ * Provides utilities for responsive design throughout the application
+ * with predefined breakpoints and convenience hooks.
  * 
  * @source directory-structure.md - "Custom Hooks" section
- * @source MEMORY - "Mobile-first PWA for field workers"
+ * @source Mobile_Optimization.md - "Responsive Design" section
  */
 
 import { useState, useEffect } from 'react';
@@ -15,7 +17,7 @@ import { useState, useEffect } from 'react';
  * @returns Boolean indicating if the media query matches
  */
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(false);
+  const [matches, setMatches] = useState<boolean>(false);
 
   useEffect(() => {
     // Create the media query list
@@ -25,7 +27,7 @@ export function useMediaQuery(query: string): boolean {
     setMatches(mediaQuery.matches);
 
     // Define a callback for when the match state changes
-    const handleChange = (event: MediaQueryListEvent) => {
+    const handleChange = (event: MediaQueryListEvent): void => {
       setMatches(event.matches);
     };
 
@@ -46,41 +48,75 @@ export function useMediaQuery(query: string): boolean {
  * Following mobile-first approach
  */
 export const breakpoints = {
+  /** Small devices (640px and up) */
   sm: '(min-width: 640px)',
+  /** Medium devices (768px and up) */
   md: '(min-width: 768px)',
+  /** Large devices (1024px and up) */
   lg: '(min-width: 1024px)',
+  /** Extra large devices (1280px and up) */
   xl: '(min-width: 1280px)',
+  /** 2X large devices (1536px and up) */
   '2xl': '(min-width: 1536px)',
   
   // Special queries
+  /** Landscape orientation */
   landscape: '(orientation: landscape)',
+  /** Portrait orientation */
   portrait: '(orientation: portrait)',
+  /** Touch-based devices */
   touchDevice: '(hover: none) and (pointer: coarse)',
+  /** Mouse-based devices */
   mouseDevice: '(hover: hover) and (pointer: fine)',
+  /** Reduced motion preference */
   reducedMotion: '(prefers-reduced-motion: reduce)',
+  /** Dark mode preference */
   darkMode: '(prefers-color-scheme: dark)',
+  /** Light mode preference */
   lightMode: '(prefers-color-scheme: light)'
 };
 
 /**
- * Convenience hooks for common breakpoints
+ * Hook to detect if the device is a mobile phone (< 768px)
+ * 
+ * @returns Boolean indicating if the device is a mobile phone
  */
-export function useIsMobile() {
+export function useIsMobile(): boolean {
   return !useMediaQuery(breakpoints.md);
 }
 
-export function useIsTablet() {
+/**
+ * Hook to detect if the device is a tablet (768px - 1023px)
+ * 
+ * @returns Boolean indicating if the device is a tablet
+ */
+export function useIsTablet(): boolean {
   return useMediaQuery(breakpoints.md) && !useMediaQuery(breakpoints.lg);
 }
 
-export function useIsDesktop() {
+/**
+ * Hook to detect if the device is a desktop (>= 1024px)
+ * 
+ * @returns Boolean indicating if the device is a desktop
+ */
+export function useIsDesktop(): boolean {
   return useMediaQuery(breakpoints.lg);
 }
 
-export function useIsLandscape() {
+/**
+ * Hook to detect if the device is in landscape orientation
+ * 
+ * @returns Boolean indicating if the device is in landscape orientation
+ */
+export function useIsLandscape(): boolean {
   return useMediaQuery(breakpoints.landscape);
 }
 
-export function useIsTouchDevice() {
+/**
+ * Hook to detect if the device has touch input
+ * 
+ * @returns Boolean indicating if the device has touch input
+ */
+export function useIsTouchDevice(): boolean {
   return useMediaQuery(breakpoints.touchDevice);
 }

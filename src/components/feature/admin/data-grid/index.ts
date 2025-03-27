@@ -5,17 +5,25 @@
  * @source Admin_Flows.md - "Data Management" section
  */
 
-export { default as DataGrid } from './DataGrid.client';
-export * from './DataGrid.client';
+export { default as DataGrid } from './data-grid.client';
+export * from './data-grid.client';
 
-export { default as FilterBar } from './FilterBar.client';
-export * from './FilterBar.client';
+export { default as FilterBar } from './filter-bar.client';
+export * from './filter-bar.client';
 
-export { default as ActionBar } from './ActionBar.client';
-export * from './ActionBar.client';
+export { default as ActionBar } from './action-bar.client';
+export * from './action-bar.client';
 
-export { default as DetailPanel } from './DetailPanel.client';
-export * from './DetailPanel.client';
+export { default as DetailPanel } from './detail-panel.client';
+export * from './detail-panel.client';
 
-export { default as FormPanel } from './FormPanel.client';
-export * from './FormPanel.client';
+export { default as FormPanel } from './form-panel.client';
+export * from './form-panel.client';
+
+export { default as EntityDetailView } from './entity-detail-view.client';
+export * from './entity-detail-view.client';
+
+export { default as Pagination } from './pagination.client';
+export * from './pagination.client';
+
+export * from './types';

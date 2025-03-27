@@ -11,16 +11,21 @@ import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'fire
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getAnalytics } from 'firebase/analytics';
 
-// Firebase configuration from the Firebase console
+// Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSvb79jEdv-8hex7D1NP2d4YYPJoK-1Bjqmo",
-  authDomain: "simple-tracker-99234.firebaseapp.com",
-  projectId: "simple-tracker-99234",
-  storageBucket: "simple-tracker-99234.firebasestorage.app",
-  messagingSenderId: "3441135708B",
-  appId: "1:3441135708B:web:d6bb4ca3172ce3b78dc1ed",
-  measurementId: "G-P9TCQFTW4B"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
+
+// Make sure the required environment variables are set
+if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId) {
+  console.error('Firebase configuration error: Missing required environment variables. Check your .env.local file.');
+}
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -32,7 +37,11 @@ const authInstance = getAuth(app);
 
 // Initialize Analytics only on client side
 if (typeof window !== 'undefined') {
-  getAnalytics(app);
+  try {
+    getAnalytics(app);
+  } catch (error) {
+    console.warn('Firebase Analytics initialization error:', error);
+  }
 }
 
 /**

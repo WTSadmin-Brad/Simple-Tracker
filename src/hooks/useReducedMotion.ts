@@ -11,10 +11,10 @@ import { useState, useEffect } from 'react';
  * Hook to detect if the user prefers reduced motion
  * Used to provide accessible animations throughout the application
  * 
- * TODO: Implement with actual media query detection
+ * @returns {boolean} - True if the user prefers reduced motion, false otherwise
  */
 export function useReducedMotion(): boolean {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(false);
 
   useEffect(() => {
     // Check for the prefers-reduced-motion media query

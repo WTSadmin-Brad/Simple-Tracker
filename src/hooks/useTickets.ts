@@ -1,384 +1,216 @@
 /**
  * Hook for managing ticket operations
- * 
- * Provides a comprehensive interface for all ticket-related operations
- * with proper error handling, loading states, and retry capabilities.
+ * Provides a simplified interface for ticket-related functionality
+ * with proper error handling, loading states, and data management.
  * 
  * @source directory-structure.md - "Custom Hooks" section
- * @source Employee_Flows.md - "Ticket Submission Wizard Flow" section
+ * @source Ticket_Submission.md - "Ticket Submission Flow" section
  */
 
-import { useCallback, useState } from 'react';
-import { Ticket, WizardData, TempImageUploadResponse } from '../types/tickets';
-import { errorHandler, ErrorCodes } from '@/lib/errors';
+import { useCallback, useMemo, useState } from 'react';
+import { useTicketQueries } from './queries/useTicketQueries';
+import { Ticket, WizardData } from '@/types/tickets';
+import { useAuth } from './useAuth';
 import { useToast } from '@/components/ui/use-toast';
+import { errorHandler } from '@/lib/errors';
+
+/**
+ * Return type for useTickets hook
+ */
+interface UseTicketsReturn {
+  /** Loading state for any ticket operation */
+  isLoading: boolean;
+  /** Error message from any ticket operation */
+  error: string | null;
+  /** Submit a complete ticket */
+  submitTicket: (wizardData: WizardData) => Promise<Ticket | null>;
+  /** Save a wizard step */
+  saveWizardStep: (step: 1 | 2 | 3, data: any) => Promise<boolean>;
+  /** Get saved wizard data */
+  getWizardData: () => Promise<WizardData | null>;
+  /** Current wizard data */
+  wizardData: WizardData | null;
+  /** Clear any error messages */
+  clearError: () => void;
+}
 
 /**
  * Hook for managing ticket operations
+ * Wrapper around query hooks that provides a simplified API
+ * for components that don't need full TanStack Query functionality
+ * 
+ * @returns Simplified ticket operations interface
  */
-export function useTickets() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useTickets(): UseTicketsReturn {
+  const { user } = useAuth();
+  const userId = user?.id || '';
   const { toast } = useToast();
+  const [localError, setLocalError] = useState<string | null>(null);
+  
+  const {
+    // Wizard data
+    wizardData,
+    isLoadingWizardData,
+    wizardDataError,
+    refetchWizardData,
+    
+    // Ticket submission
+    submitTicket,
+    isSubmittingTicket,
+    submitTicketError,
+    
+    // Wizard step save
+    saveWizardStep,
+    isSavingWizardStep,
+  } = useTicketQueries();
+
+  // Combine loading states
+  const isLoading = useMemo(() => 
+    isLoadingWizardData || 
+    isSubmittingTicket || 
+    isSavingWizardStep, 
+  [
+    isLoadingWizardData,
+    isSubmittingTicket,
+    isSavingWizardStep
+  ]);
+
+  // Combine error states
+  const error = useMemo(() => 
+    localError ||
+    wizardDataError?.message || 
+    submitTicketError?.message || 
+    null, 
+  [
+    localError,
+    wizardDataError,
+    submitTicketError
+  ]);
 
   /**
-   * Submit a complete ticket
+   * Clear any error messages
    */
-  const submitTicket = useCallback(async (wizardData: WizardData) => {
-    setIsLoading(true);
-    setError(null);
+  const clearError = useCallback((): void => {
+    setLocalError(null);
+  }, []);
+
+  /**
+   * Get saved wizard data with error handling
+   * 
+   * @returns Promise resolving to wizard data or null if error
+   */
+  const getWizardData = useCallback(async (): Promise<WizardData | null> => {
+    try {
+      await refetchWizardData();
+      return wizardData;
+    } catch (err) {
+      const userMessage = errorHandler.getUserFriendlyMessage(err);
+      setLocalError(userMessage);
+      
+      errorHandler.logError(err, { 
+        operation: 'getWizardData',
+      });
+      
+      return null;
+    }
+  }, [refetchWizardData, wizardData]);
+
+  /**
+   * Submit ticket with current user
+   * 
+   * @param wizardData Complete wizard data to submit
+   * @returns Promise resolving to created ticket or null if error
+   * @throws Error if user is not authenticated
+   */
+  const submitTicketWithUser = useCallback(async (wizardData: WizardData): Promise<Ticket | null> => {
+    clearError();
     
     try {
-      const response = await errorHandler.withRetry(async () => {
-        const result = await fetch('/api/tickets/submit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(wizardData),
+      if (!userId) {
+        const error = new Error('User must be authenticated to submit tickets');
+        setLocalError(error.message);
+        
+        errorHandler.logError(error, { 
+          operation: 'submitTicket',
+          authenticated: false
         });
         
-        if (!result.ok) {
-          const errorData = await result.json();
-          throw errorHandler.createError(
-            errorData.message || 'Failed to submit ticket',
-            errorData.code || ErrorCodes.UNKNOWN_ERROR,
-            result.status
-          );
-        }
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to submit tickets.",
+          variant: "destructive",
+        });
         
-        return result.json();
-      }, {
-        maxRetries: 3,
-        retryDelay: 1000,
-        onRetry: (error, attempt) => {
-          toast({
-            title: "Connection issue",
-            description: `Retrying to submit ticket (Attempt ${attempt}/3)...`,
-            variant: "destructive",
-          });
-        }
-      });
+        return null;
+      }
       
-      return response.ticket as Ticket;
-    } catch (err) {
-      const formattedError = errorHandler.formatError(err);
-      const userMessage = errorHandler.getUserFriendlyMessage(err);
+      const result = await submitTicket(userId, wizardData);
       
-      setError(userMessage);
       toast({
-        title: "Failed to submit ticket",
-        description: userMessage,
-        variant: "destructive",
+        title: "Ticket Submitted",
+        description: "Your ticket has been submitted successfully.",
       });
+      
+      return result;
+    } catch (err) {
+      const userMessage = errorHandler.getUserFriendlyMessage(err);
+      setLocalError(userMessage);
       
       errorHandler.logError(err, { 
         operation: 'submitTicket',
-        wizardData: { ...wizardData, images: `[${wizardData.images?.length || 0} images]` } 
+        userId
       });
       
       return null;
-    } finally {
-      setIsLoading(false);
     }
-  }, [toast]);
+  }, [submitTicket, userId, clearError, toast]);
 
   /**
-   * Upload a temporary image for the wizard
+   * Save wizard step with current user
+   * 
+   * @param step Wizard step number (1-3)
+   * @param data Step data to save
+   * @returns Promise resolving to success status
    */
-  const uploadTempImage = useCallback(async (file: File) => {
-    setIsLoading(true);
-    setError(null);
+  const saveWizardStepWithUser = useCallback(async (step: 1 | 2 | 3, data: any): Promise<boolean> => {
+    clearError();
     
     try {
-      // Create a FormData object to upload the file
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await errorHandler.withRetry(async () => {
-        const result = await fetch('/api/tickets/upload-temp', {
-          method: 'POST',
-          body: formData,
+      if (!userId) {
+        const error = new Error('User must be authenticated to save wizard data');
+        setLocalError(error.message);
+        
+        errorHandler.logError(error, { 
+          operation: 'saveWizardStep',
+          step,
+          authenticated: false
         });
         
-        if (!result.ok) {
-          const errorData = await result.json();
-          throw errorHandler.createError(
-            errorData.message || 'Failed to upload image',
-            errorData.code || ErrorCodes.UPLOAD_FAILED,
-            result.status
-          );
-        }
-        
-        return result.json();
-      }, {
-        maxRetries: 2,
-        retryDelay: 1000,
-      });
-      
-      return response as TempImageUploadResponse;
-    } catch (err) {
-      const formattedError = errorHandler.formatError(err);
-      const userMessage = errorHandler.getUserFriendlyMessage(err);
-      
-      setError(userMessage);
-      toast({
-        title: "Failed to upload image",
-        description: userMessage,
-        variant: "destructive",
-      });
-      
-      errorHandler.logError(err, { 
-        operation: 'uploadTempImage',
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type
-      });
-      
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [toast]);
-
-  /**
-   * Delete a temporary image
-   */
-  const deleteTempImage = useCallback(async (tempId: string) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const response = await errorHandler.withRetry(async () => {
-        const result = await fetch(`/api/tickets/delete-temp/${tempId}`, {
-          method: 'DELETE',
-        });
-        
-        if (!result.ok) {
-          const errorData = await result.json();
-          throw errorHandler.createError(
-            errorData.message || 'Failed to delete image',
-            errorData.code || ErrorCodes.UNKNOWN_ERROR,
-            result.status
-          );
-        }
-        
-        return result.json();
-      });
-      
-      return response.success as boolean;
-    } catch (err) {
-      const formattedError = errorHandler.formatError(err);
-      const userMessage = errorHandler.getUserFriendlyMessage(err);
-      
-      setError(userMessage);
-      
-      // For image deletion, we don't want to show a toast for every failure
-      // as it might be a background operation
-      if (formattedError.status !== 404) {
-        toast({
-          title: "Failed to delete image",
-          description: userMessage,
-          variant: "destructive",
-        });
+        return false;
       }
       
-      errorHandler.logError(err, { 
-        operation: 'deleteTempImage',
-        tempId 
-      });
-      
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [toast]);
-
-  /**
-   * Save wizard step data
-   */
-  const saveWizardStep = useCallback(async (
-    step: 1 | 2 | 3,
-    data: any
-  ) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const response = await errorHandler.withRetry(async () => {
-        const result = await fetch(`/api/tickets/wizard/${step}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(data),
-        });
-        
-        if (!result.ok) {
-          const errorData = await result.json();
-          throw errorHandler.createError(
-            errorData.message || `Failed to save step ${step}`,
-            errorData.code || ErrorCodes.UNKNOWN_ERROR,
-            result.status
-          );
-        }
-        
-        return result.json();
-      }, {
-        // More aggressive retry for auto-save operations
-        maxRetries: 5,
-        retryDelay: 500,
-        // Only show UI notifications on final failure
-        onRetry: (error, attempt, maxRetries) => {
-          if (attempt === maxRetries) {
-            toast({
-              title: "Auto-save issue",
-              description: "Having trouble saving your progress. Please check your connection.",
-              variant: "destructive",
-            });
-          }
-        }
-      });
-      
-      return response.success as boolean;
+      return await saveWizardStep(userId, step, data);
     } catch (err) {
-      const formattedError = errorHandler.formatError(err);
       const userMessage = errorHandler.getUserFriendlyMessage(err);
-      
-      setError(userMessage);
-      toast({
-        title: "Failed to save progress",
-        description: userMessage,
-        variant: "destructive",
-      });
+      setLocalError(userMessage);
       
       errorHandler.logError(err, { 
         operation: 'saveWizardStep',
         step,
-        data: { ...data, images: data.images ? `[${data.images.length} images]` : undefined }
+        userId
       });
       
       return false;
-    } finally {
-      setIsLoading(false);
     }
-  }, [toast]);
-
-  /**
-   * Get saved wizard data
-   */
-  const getWizardData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const response = await errorHandler.withRetry(async () => {
-        const result = await fetch('/api/tickets/wizard', {
-          method: 'GET',
-        });
-        
-        if (!result.ok) {
-          // For 404 (no saved data), just return null without error
-          if (result.status === 404) {
-            return { data: null };
-          }
-          
-          const errorData = await result.json();
-          throw errorHandler.createError(
-            errorData.message || 'Failed to retrieve wizard data',
-            errorData.code || ErrorCodes.UNKNOWN_ERROR,
-            result.status
-          );
-        }
-        
-        return result.json();
-      });
-      
-      return response.data as WizardData | null;
-    } catch (err) {
-      const formattedError = errorHandler.formatError(err);
-      const userMessage = errorHandler.getUserFriendlyMessage(err);
-      
-      setError(userMessage);
-      
-      // Don't show toast for no saved data
-      if (formattedError.status !== 404) {
-        toast({
-          title: "Failed to retrieve saved progress",
-          description: userMessage,
-          variant: "destructive",
-        });
-      }
-      
-      errorHandler.logError(err, { 
-        operation: 'getWizardData' 
-      });
-      
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [toast]);
-
-  /**
-   * Clear saved wizard data
-   */
-  const clearWizardData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const response = await errorHandler.withRetry(async () => {
-        const result = await fetch('/api/tickets/wizard', {
-          method: 'DELETE',
-        });
-        
-        if (!result.ok) {
-          const errorData = await result.json();
-          throw errorHandler.createError(
-            errorData.message || 'Failed to clear wizard data',
-            errorData.code || ErrorCodes.UNKNOWN_ERROR,
-            result.status
-          );
-        }
-        
-        return result.json();
-      });
-      
-      return response.success as boolean;
-    } catch (err) {
-      const formattedError = errorHandler.formatError(err);
-      const userMessage = errorHandler.getUserFriendlyMessage(err);
-      
-      setError(userMessage);
-      
-      // For this background operation, only show toast for more serious errors
-      if (formattedError.status && formattedError.status >= 500) {
-        toast({
-          title: "Failed to clear saved progress",
-          description: userMessage,
-          variant: "destructive",
-        });
-      }
-      
-      errorHandler.logError(err, { 
-        operation: 'clearWizardData' 
-      });
-      
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [toast]);
+  }, [saveWizardStep, userId, clearError]);
 
   return {
     isLoading,
     error,
-    submitTicket,
-    uploadTempImage,
-    deleteTempImage,
-    saveWizardStep,
+    submitTicket: submitTicketWithUser,
+    saveWizardStep: saveWizardStepWithUser,
     getWizardData,
-    clearWizardData,
+    wizardData,
+    clearError,
   };
 }

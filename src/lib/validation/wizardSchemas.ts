@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { COUNTER_RANGES } from '../../stores/wizardStore';
+import { COLOR_THRESHOLDS } from '../constants/ticketCategories';
 
 // Basic Info Step Schema
 export const basicInfoSchema = z.object({
@@ -38,7 +38,7 @@ export const categoriesSchema = z.record(
   })
   .int("Value must be a whole number")
   .min(0, "Value cannot be negative")
-  .max(COUNTER_RANGES.GOLD[1], `Value cannot exceed ${COUNTER_RANGES.GOLD[1]}`)
+  .max(COLOR_THRESHOLDS.MAX, `Value cannot exceed ${COLOR_THRESHOLDS.MAX}`)
 ).refine((data) => {
   // At least one category must have a value greater than 0
   return Object.values(data).some(value => value > 0);

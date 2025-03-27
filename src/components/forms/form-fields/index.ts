@@ -6,10 +6,10 @@
  * @source directory-structure.md - "Form Components" section
  */
 
-export { TextField } from './TextField.client';
-export { SelectField, type SelectOption } from './SelectField.client';
-export { DateField } from './DateField.client';
-export { CheckboxField } from './CheckboxField.client';
-export { TextareaField } from './TextareaField.client';
-export { CounterField } from './CounterField.client';
-export { ImageUploadField } from './ImageUploadField.client';
+export { TextField } from './text-field.client';
+export { SelectField, type SelectOption } from './select-field.client';
+export { DateField } from './date-field.client';
+export { CheckboxField } from './checkbox-field.client';
+export { TextareaField } from './textarea-field.client';
+export { CounterField } from './counter-field.client';
+export { ImageUploadField } from './image-upload-field.client';

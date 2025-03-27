@@ -5,28 +5,11 @@
  * @source Admin_Flows.md - "Filter & Export Truck Tickets" section
  */
 
-import { DataGridColumn } from '../data-grid/DataGrid.client';
-import { FilterOption } from '../data-grid/FilterBar.client';
-import { Action } from '../data-grid/ActionBar.client';
+import { DataGridColumn } from '../data-grid/data-grid.client';
+import { FilterOption } from '../data-grid/filter-bar.client';
+import { Action } from '../data-grid/action-bar.client';
+import { Ticket } from './types';
 import { format } from 'date-fns';
-
-// Ticket type definition based on the data model
-export interface Ticket {
-  id: string;
-  userId: string;
-  date: Date;
-  truckNumber: string;
-  truckNickname: string;
-  jobsite: string;
-  jobsiteName?: string; // For display purposes
-  total: number;
-  imageCount: number;
-  submissionDate: Date;
-  archiveStatus: 'active' | 'images_archived' | 'fully_archived';
-  categories?: {
-    [key: string]: number;
-  };
-}
 
 // Column definitions for the ticket data grid
 export const ticketColumns: DataGridColumn<Ticket>[] = [

@@ -1,5 +1,5 @@
 /**
- * Text Field Component
+ * text-field.client.tsx
  * 
  * A reusable text input field with validation and error handling.
  * 
@@ -36,6 +36,7 @@ export function TextField({
   
   return (
     <div className="space-y-2">
+      {/* Field label */}
       <div className="flex items-center justify-between">
         <Label 
           htmlFor={fieldId}
@@ -49,6 +50,7 @@ export function TextField({
         </Label>
       </div>
       
+      {/* Input field */}
       <Input
         id={fieldId}
         className={cn(
@@ -62,6 +64,7 @@ export function TextField({
         {...props}
       />
       
+      {/* Error message */}
       {error && (
         <p 
           id={errorId}
@@ -71,6 +74,7 @@ export function TextField({
         </p>
       )}
       
+      {/* Hint text */}
       {hint && !error && (
         <p 
           id={hintId}

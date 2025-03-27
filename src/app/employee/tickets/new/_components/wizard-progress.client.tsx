@@ -7,18 +7,20 @@
 
 import { motion } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
-import { WizardStep } from './WizardContainer.client';
+import { WizardStep } from './wizard-container.client';
 
 type WizardProgressProps = {
   steps: { id: WizardStep; label: string }[];
   currentStep: WizardStep;
   onStepClick: (step: WizardStep) => void;
+  stepValidation: Record<WizardStep, boolean>;
 };
 
 export function WizardProgress({ 
   steps, 
   currentStep, 
-  onStepClick 
+  onStepClick,
+  stepValidation
 }: WizardProgressProps) {
   const currentStepIndex = steps.findIndex(step => step.id === currentStep);
   const shouldReduceMotion = useReducedMotion();

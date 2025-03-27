@@ -1,285 +1,280 @@
 /**
- * FilterBar.client.tsx
+ * filter-bar.client.tsx
  * Filter bar component for admin data management pages
  * 
  * @source Admin_Flows.md - "Data Management" section
  */
 
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+'use client';
 
-// Filter option type
-export interface FilterOption {
-  id: string;
-  label: string;
-  type: 'text' | 'select' | 'date' | 'dateRange' | 'boolean';
-  options?: { value: string; label: string }[];
-  defaultValue?: any;
-}
-
-// Filter bar props
-export interface FilterBarProps {
-  filters: FilterOption[];
-  onFilterChange: (filters: Record<string, any>) => void;
-  onReset?: () => void;
-  onSearch?: (searchTerm: string) => void;
-  searchPlaceholder?: string;
-  actionButtons?: React.ReactNode;
-  isCollapsible?: boolean;
-}
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Button } from '@/components/ui/button.client';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input.client';
+import { Checkbox } from '@/components/ui/checkbox.client';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.client';
+import { cn } from '@/lib/utils';
+import { SearchIcon, FilterIcon, XIcon } from 'lucide-react';
+import { FilterConfig, FilterBarProps } from './types';
 
 /**
  * Filter bar component for admin data management pages
- * 
- * TODO: Implement the following features:
- * - Text search
- * - Filter controls based on filter type
- * - Filter reset
- * - Collapsible filter panel
- * - Responsive design
  */
-export function FilterBar({
+export default function FilterBar({
   filters,
   onFilterChange,
-  onReset,
   onSearch,
-  searchPlaceholder = 'Search...',
-  actionButtons,
-  isCollapsible = true
+  initialFilters = {},
+  initialSearchTerm = '',
+  className
 }: FilterBarProps) {
-  const [filterValues, setFilterValues] = useState<Record<string, any>>({});
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isExpanded, setIsExpanded] = useState(!isCollapsible);
-  
-  // Initialize filter values with defaults
-  useEffect(() => {
-    const initialValues: Record<string, any> = {};
-    
-    filters.forEach(filter => {
-      if (filter.defaultValue !== undefined) {
-        initialValues[filter.id] = filter.defaultValue;
-      }
-    });
-    
-    setFilterValues(initialValues);
-  }, [filters]);
+  const [filterValues, setFilterValues] = useState<Record<string, any>>(initialFilters);
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
+  const [isExpanded, setIsExpanded] = useState(false);
   
   // Handle filter change
-  const handleFilterChange = (id: string, value: any) => {
-    const newValues = {
-      ...filterValues,
-      [id]: value
-    };
-    
-    // Remove empty values
-    if (value === '' || value === null || value === undefined) {
-      delete newValues[id];
-    }
-    
-    setFilterValues(newValues);
-    onFilterChange(newValues);
-  };
+  const handleFilterChange = useCallback((key: string, value: any) => {
+    setFilterValues(prevValues => {
+      const newValues = { ...prevValues, [key]: value };
+      
+      // Remove empty values
+      if (value === '' || value === null || value === undefined) {
+        delete newValues[key];
+      }
+      
+      // Call the parent handler
+      onFilterChange(newValues);
+      
+      return newValues;
+    });
+  }, [onFilterChange]);
   
   // Handle search
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     if (onSearch) {
       onSearch(searchTerm);
     }
-  };
+  }, [onSearch, searchTerm]);
   
   // Handle search input keydown
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleSearch();
     }
-  };
+  }, [handleSearch]);
   
   // Handle reset
-  const handleReset = () => {
-    const initialValues: Record<string, any> = {};
-    
-    filters.forEach(filter => {
-      if (filter.defaultValue !== undefined) {
-        initialValues[filter.id] = filter.defaultValue;
-      }
-    });
-    
-    setFilterValues(initialValues);
+  const handleReset = useCallback(() => {
+    setFilterValues({});
     setSearchTerm('');
     
-    if (onReset) {
-      onReset();
-    } else {
-      onFilterChange(initialValues);
-      if (onSearch) {
-        onSearch('');
-      }
+    onFilterChange({});
+    if (onSearch) {
+      onSearch('');
     }
-  };
+  }, [onFilterChange, onSearch]);
   
   // Toggle expanded state
-  const toggleExpanded = () => {
-    setIsExpanded(!isExpanded);
-  };
+  const toggleExpanded = useCallback(() => {
+    setIsExpanded(prev => !prev);
+  }, []);
+  
+  // Memoize active filter count
+  const activeFilterCount = useMemo(() => {
+    return Object.keys(filterValues).length;
+  }, [filterValues]);
   
   // Render filter control based on type
-  const renderFilterControl = (filter: FilterOption) => {
-    const value = filterValues[filter.id] !== undefined ? filterValues[filter.id] : '';
+  const renderFilterControl = useCallback((filter: FilterConfig) => {
+    const value = filterValues[filter.key] !== undefined ? filterValues[filter.key] : '';
     
     switch (filter.type) {
       case 'text':
         return (
-          <input
+          <Input
             type="text"
-            className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-300"
             value={value}
-            onChange={(e) => handleFilterChange(filter.id, e.target.value)}
-            placeholder={filter.label}
+            onChange={(e) => handleFilterChange(filter.key, e.target.value)}
+            placeholder={filter.placeholder || `Filter by ${filter.label}`}
+            className="w-full"
           />
         );
         
       case 'select':
         return (
-          <select
-            className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-300"
+          <Select
             value={value}
-            onChange={(e) => handleFilterChange(filter.id, e.target.value)}
+            onValueChange={(val) => handleFilterChange(filter.key, val)}
           >
-            <option value="">All {filter.label}</option>
-            {filter.options?.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={`All ${filter.label}`} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All {filter.label}</SelectItem>
+              {filter.options?.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         );
         
       case 'date':
         return (
-          <input
+          <Input
             type="date"
-            className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-300"
             value={value}
-            onChange={(e) => handleFilterChange(filter.id, e.target.value)}
+            onChange={(e) => handleFilterChange(filter.key, e.target.value)}
+            className="w-full"
           />
-        );
-        
-      case 'dateRange':
-        return (
-          <div className="flex space-x-2">
-            <input
-              type="date"
-              className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-300"
-              value={value?.from || ''}
-              onChange={(e) => handleFilterChange(filter.id, { ...value, from: e.target.value })}
-              placeholder="From"
-            />
-            <input
-              type="date"
-              className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-300"
-              value={value?.to || ''}
-              onChange={(e) => handleFilterChange(filter.id, { ...value, to: e.target.value })}
-              placeholder="To"
-            />
-          </div>
         );
         
       case 'boolean':
         return (
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id={`filter-${filter.key}`}
               checked={value === true}
-              onChange={(e) => handleFilterChange(filter.id, e.target.checked)}
+              onCheckedChange={(checked) => handleFilterChange(filter.key, checked)}
             />
-            <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+            <label 
+              htmlFor={`filter-${filter.key}`}
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
               {filter.label}
-            </span>
+            </label>
           </div>
         );
         
       default:
         return null;
     }
-  };
+  }, [filterValues, handleFilterChange]);
+  
+  // Memoize filter badges for better performance
+  const filterBadges = useMemo(() => {
+    if (Object.keys(filterValues).length === 0) return null;
+    
+    return (
+      <div className="flex flex-wrap gap-2 mt-2">
+        {Object.entries(filterValues).map(([key, value]) => {
+          const filter = filters.find(f => f.key === key);
+          if (!filter) return null;
+          
+          let displayValue = value;
+          
+          // Format display value based on filter type
+          if (filter.type === 'select' && filter.options) {
+            const option = filter.options.find(opt => opt.value === value);
+            if (option) displayValue = option.label;
+          } else if (filter.type === 'boolean') {
+            displayValue = value ? 'Yes' : 'No';
+          }
+          
+          return (
+            <div 
+              key={key}
+              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-300"
+            >
+              <span>{filter.label}: {displayValue}</span>
+              <button
+                type="button"
+                className="ml-1 h-4 w-4 rounded-full flex items-center justify-center hover:bg-primary-200 dark:hover:bg-primary-800"
+                onClick={() => handleFilterChange(key, undefined)}
+              >
+                <XIcon className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        })}
+        
+        <button
+          type="button"
+          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+          onClick={handleReset}
+        >
+          Clear all
+        </button>
+      </div>
+    );
+  }, [filterValues, filters, handleFilterChange, handleReset]);
   
   return (
-    <div className="bg-white dark:bg-gray-800 shadow rounded-lg mb-6">
-      {/* Search and toggle bar */}
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
-        {/* Search */}
-        <div className="flex-grow max-w-md">
-          <div className="relative rounded-md shadow-sm">
-            <input
-              type="text"
-              className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-300 pr-10"
-              placeholder={searchPlaceholder}
+    <Card className={cn("overflow-hidden", className)}>
+      {/* Search and expand/collapse */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-2">
+        <div className="w-full sm:max-w-xs flex items-center space-x-2">
+          <div className="relative flex-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <SearchIcon className="h-4 w-4 text-gray-400" />
+            </div>
+            <Input
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={handleSearchKeyDown}
+              className="pl-10"
             />
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-              <button
-                type="button"
-                className="text-gray-400 hover:text-gray-500 dark:text-gray-300 dark:hover:text-gray-200"
-                onClick={handleSearch}
-              >
-                🔍
-              </button>
-            </div>
           </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleSearch}
+          >
+            Search
+          </Button>
         </div>
         
-        {/* Action buttons */}
         <div className="flex items-center space-x-2">
-          {actionButtons}
-          
-          {/* Reset button */}
-          <button
-            type="button"
-            className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleReset}
+            disabled={Object.keys(filterValues).length === 0 && searchTerm === ''}
           >
             Reset
-          </button>
-          
-          {/* Toggle button */}
-          {isCollapsible && (
-            <button
-              type="button"
-              className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-              onClick={toggleExpanded}
-            >
-              {isExpanded ? 'Hide Filters' : 'Show Filters'}
-            </button>
-          )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleExpanded}
+            className={cn(
+              "flex items-center",
+              activeFilterCount > 0 && "border-primary text-primary"
+            )}
+          >
+            <FilterIcon className="h-4 w-4 mr-1" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-1 h-5 w-5 rounded-full bg-primary text-white text-xs flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
         </div>
       </div>
       
+      {/* Filter badges */}
+      {filterBadges && (
+        <div className="px-4 pb-2">
+          {filterBadges}
+        </div>
+      )}
+      
       {/* Filter controls */}
       {isExpanded && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
-        >
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filters.map(filter => (
-            <div key={filter.id} className="space-y-1">
-              {filter.type !== 'boolean' && (
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {filter.label}
-                </label>
-              )}
+            <div key={filter.key} className="space-y-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {filter.label}
+              </label>
               {renderFilterControl(filter)}
             </div>
           ))}
-        </motion.div>
+        </div>
       )}
-    </div>
+    </Card>
   );
 }
-
-export default FilterBar;

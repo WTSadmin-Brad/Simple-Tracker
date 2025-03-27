@@ -1,7 +1,10 @@
 /**
  * index.ts
- * Central export point for all admin data grid configurations
+ * Central export point for all admin data grid configurations and types
  */
+
+// Export all types
+export * from './types';
 
 // Ticket grid configuration
 export * from './ticketGridConfig';

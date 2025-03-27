@@ -1,58 +1,27 @@
-'use client';
-
 /**
  * Confirmation Step Component (Client Component)
  * Final step of the wizard for reviewing and submitting the ticket
  */
+'use client';
 
 import Image from 'next/image';
 import { useWizardStore } from '@/stores/wizardStore';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getCounterColorClass, getCounterGradient } from '@/lib/constants/ticketCategories';
 
 type ConfirmationStepProps = {
   onSubmit: () => Promise<void>;
 };
 
-// Get gradient color based on count value
-const getCounterGradient = (count: number) => {
-  if (count === 0) {
-    // Red gradient for 0
-    return 'linear-gradient(135deg, hsl(0, 84%, 55%), hsl(0, 84%, 65%))';
-  } else if (count >= 1 && count <= 84) {
-    // Calculate a gradient that shifts from red to yellow based on position in range
-    const percentage = (count - 1) / 83;
-    return `linear-gradient(135deg, 
-      hsl(${Math.round(percentage * 45)}, 90%, 55%), 
-      hsl(${Math.round(percentage * 45 + 5)}, 90%, 65%))`;
-  } else if (count >= 85 && count <= 124) {
-    // Calculate a gradient that shifts from yellow to green based on position in range
-    const percentage = (count - 85) / 39;
-    return `linear-gradient(135deg, 
-      hsl(${Math.round(45 + percentage * 97)}, 80%, 45%), 
-      hsl(${Math.round(45 + percentage * 97 + 5)}, 80%, 55%))`;
-  } else {
-    // Gold gradient for 125-150
-    return 'linear-gradient(135deg, hsl(43, 96%, 50%), hsl(43, 96%, 60%))';
-  }
-};
-
-// Get color based on count value (fallback)
-const getCounterColor = (count: number) => {
-  if (count === 0) return 'var(--counter-red)';
-  if (count >= 1 && count <= 84) return 'var(--counter-yellow)';
-  if (count >= 85 && count <= 124) return 'var(--counter-green)';
-  return 'var(--counter-gold)';
-};
-
-// Category definitions
+// Category definitions with backend mappings
 const CATEGORIES = [
-  { id: 'category1', name: 'Concrete' },
-  { id: 'category2', name: 'Steel' },
-  { id: 'category3', name: 'Wood' },
-  { id: 'category4', name: 'Plastic' },
-  { id: 'category5', name: 'Glass' },
-  { id: 'category6', name: 'Other' },
+  { id: 'category1', name: 'Hangers', backendName: 'hangers' },
+  { id: 'category2', name: 'Leaners', backendName: 'leaner6To12' },
+  { id: 'category3', name: 'Downs', backendName: 'leaner13To24' },
+  { id: 'category4', name: 'Broken', backendName: 'leaner25To36' },
+  { id: 'category5', name: 'Damaged', backendName: 'leaner37To48' },
+  { id: 'category6', name: 'Other', backendName: 'leaner49Plus' },
 ];
 
 export function ConfirmationStep({ onSubmit }: ConfirmationStepProps) {
@@ -60,6 +29,7 @@ export function ConfirmationStep({ onSubmit }: ConfirmationStepProps) {
   
   // Format date for display
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return 'No date selected';
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -132,7 +102,7 @@ export function ConfirmationStep({ onSubmit }: ConfirmationStepProps) {
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
-                    color: getCounterColor(count) // Fallback for browsers that don't support background-clip
+                    color: getCounterColorClass(count).replace('bg-', 'text-') // Fallback using our utility
                   }}
                 >
                   {count}
@@ -150,12 +120,12 @@ export function ConfirmationStep({ onSubmit }: ConfirmationStepProps) {
           <div className="grid grid-cols-3 gap-2">
             {imageUpload.images.map((image, index) => (
               <div 
-                key={image.id} 
+                key={image.tempId} 
                 className="relative aspect-square rounded-md overflow-hidden border border-border"
               >
                 <Image
                   src={image.url}
-                  alt={`${image.name || `Uploaded image ${index + 1}`}`}
+                  alt={`Uploaded image ${index + 1}`}
                   fill
                   sizes="(max-width: 768px) 100vw, 33vw"
                   className="object-cover"

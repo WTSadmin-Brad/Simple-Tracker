@@ -3,6 +3,10 @@
  * Utilities for restoring archived data
  */
 
+import { ArchiveRestoreParams } from '@/lib/schemas/archiveSchemas';
+import { restoreArchivedItem } from '@/lib/services/archiveService';
+import { NotFoundError, ValidationError } from '@/lib/errors/error-types';
+
 // Interface for restore operation result
 export interface RestoreResult {
   success: boolean;
@@ -13,58 +17,39 @@ export interface RestoreResult {
   message?: string;
 }
 
-// Placeholder function to restore an archived ticket
-export async function restoreArchivedTicket(archivedId: string): Promise<RestoreResult> {
-  // In a real implementation, this would:
-  // 1. Fetch the archived ticket data from Firestore archives
-  // 2. Create a new active ticket with the archived data
-  // 3. Update the archive record to indicate it was restored
-  
-  // Placeholder result
-  return {
-    success: true,
-    id: archivedId,
-    type: 'ticket',
-    originalId: 'restored-ticket-123',
-    restoredAt: new Date().toISOString(),
-    message: 'Ticket successfully restored',
-  };
-}
-
-// Placeholder function to restore an archived image
-export async function restoreArchivedImage(archivedId: string): Promise<RestoreResult> {
-  // In a real implementation, this would:
-  // 1. Fetch the archived image data from Firestore archives
-  // 2. Copy the image from archive storage to active storage
-  // 3. Update the archive record to indicate it was restored
-  
-  // Placeholder result
-  return {
-    success: true,
-    id: archivedId,
-    type: 'image',
-    originalId: 'restored-image-123',
-    restoredAt: new Date().toISOString(),
-    message: 'Image successfully restored',
-  };
-}
-
-// Placeholder function to restore an archived workday
-export async function restoreArchivedWorkday(archivedId: string): Promise<RestoreResult> {
-  // In a real implementation, this would:
-  // 1. Fetch the archived workday data from Firestore archives
-  // 2. Create a new active workday with the archived data
-  // 3. Update the archive record to indicate it was restored
-  
-  // Placeholder result
-  return {
-    success: true,
-    id: archivedId,
-    type: 'workday',
-    originalId: 'restored-workday-123',
-    restoredAt: new Date().toISOString(),
-    message: 'Workday successfully restored',
-  };
+/**
+ * Restore an archived item
+ * @param archivedId ID of the archived item to restore
+ * @param type Type of the archived item
+ * @returns Result of the restore operation
+ */
+export async function restoreArchivedData(params: ArchiveRestoreParams): Promise<RestoreResult> {
+  try {
+    // Call the archive service to handle restoration
+    const result = await restoreArchivedItem(params);
+    
+    // Format the result to match the expected interface
+    return {
+      success: result.success,
+      id: params.id,
+      type: params.type as 'ticket' | 'workday' | 'image',
+      originalId: result.originalId,
+      restoredAt: new Date().toISOString(),
+      message: `${params.type} successfully restored`
+    };
+  } catch (error) {
+    // Handle specific error types
+    if (error instanceof NotFoundError) {
+      throw error;
+    }
+    
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 // TODO: Implement proper Firebase integration for archive restoration

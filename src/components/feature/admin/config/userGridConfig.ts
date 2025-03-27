@@ -5,25 +5,11 @@
  * @source Admin_Flows.md - "User Management" section
  */
 
-import { DataGridColumn } from '../data-grid/DataGrid.client';
-import { FilterOption } from '../data-grid/FilterBar.client';
-import { Action } from '../data-grid/ActionBar.client';
+import { DataGridColumn } from '../data-grid/data-grid.client';
+import { FilterOption } from '../data-grid/filter-bar.client';
+import { Action } from '../data-grid/action-bar.client';
+import { User } from './types';
 import { format } from 'date-fns';
-
-// User type definition based on the data model
-export interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  firstName: string;
-  lastName: string;
-  role: 'admin' | 'manager' | 'employee';
-  status: 'active' | 'inactive' | 'pending';
-  phoneNumber?: string;
-  lastLogin?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
 
 // Column definitions for the user data grid
 export const userColumns: DataGridColumn<User>[] = [
@@ -31,11 +17,16 @@ export const userColumns: DataGridColumn<User>[] = [
     key: 'displayName',
     header: 'Name',
     sortable: true,
-    renderCell: (item) => item.displayName || `${item.firstName} ${item.lastName}`
+    renderCell: (item) => item.displayName
   },
   {
     key: 'email',
     header: 'Email',
+    sortable: true
+  },
+  {
+    key: 'username',
+    header: 'Username',
     sortable: true
   },
   {
@@ -46,11 +37,10 @@ export const userColumns: DataGridColumn<User>[] = [
       const role = item.role;
       const roleMap = {
         admin: { label: 'Admin', className: 'bg-purple-100 text-purple-800' },
-        manager: { label: 'Manager', className: 'bg-blue-100 text-blue-800' },
         employee: { label: 'Employee', className: 'bg-green-100 text-green-800' }
       };
       
-      const { label, className } = roleMap[role];
+      const { label, className } = roleMap[role] || { label: role, className: 'bg-gray-100 text-gray-800' };
       return (
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${className}`}>
           {label}
@@ -59,18 +49,17 @@ export const userColumns: DataGridColumn<User>[] = [
     }
   },
   {
-    key: 'status',
+    key: 'isActive',
     header: 'Status',
     sortable: true,
     renderCell: (item) => {
-      const status = item.status;
+      const isActive = !!item.isActive;
       const statusMap = {
-        active: { label: 'Active', className: 'bg-green-100 text-green-800' },
-        inactive: { label: 'Inactive', className: 'bg-gray-100 text-gray-800' },
-        pending: { label: 'Pending', className: 'bg-amber-100 text-amber-800' }
+        true: { label: 'Active', className: 'bg-green-100 text-green-800' },
+        false: { label: 'Inactive', className: 'bg-gray-100 text-gray-800' }
       };
       
-      const { label, className } = statusMap[status];
+      const { label, className } = statusMap[String(isActive)];
       return (
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${className}`}>
           {label}
@@ -101,85 +90,75 @@ export const userFilters: FilterOption[] = [
     options: [
       { value: 'all', label: 'All Roles' },
       { value: 'admin', label: 'Admin' },
-      { value: 'manager', label: 'Manager' },
       { value: 'employee', label: 'Employee' }
     ],
     defaultValue: 'all'
   },
   {
-    id: 'status',
+    id: 'isActive',
     label: 'Status',
     type: 'select',
     options: [
       { value: 'all', label: 'All Statuses' },
-      { value: 'active', label: 'Active' },
-      { value: 'inactive', label: 'Inactive' },
-      { value: 'pending', label: 'Pending' }
+      { value: 'true', label: 'Active' },
+      { value: 'false', label: 'Inactive' }
     ],
-    defaultValue: 'active'
-  },
-  {
-    id: 'searchTerm',
-    label: 'Search',
-    type: 'text',
-    defaultValue: ''
+    defaultValue: 'true'
   }
 ];
 
 // Action definitions for the user action bar
 export const userActions: Action[] = [
   {
-    id: 'invite',
-    label: 'Invite User',
-    icon: 'mail',
-    onClick: () => {}, // To be implemented at runtime
+    id: 'add',
+    label: 'Add User',
+    icon: 'plus-circle',
+    requiresSelection: false,
     variant: 'primary'
   },
   {
     id: 'edit',
     label: 'Edit',
-    icon: 'edit',
-    onClick: () => {}, // To be implemented at runtime
+    icon: 'pencil',
     requiresSelection: true,
+    maxSelection: 1,
     variant: 'secondary'
   },
   {
     id: 'resetPassword',
     label: 'Reset Password',
     icon: 'key',
-    onClick: () => {}, // To be implemented at runtime
     requiresSelection: true,
     confirmationRequired: true,
     confirmationMessage: 'Are you sure you want to send a password reset email to the selected user(s)?',
     variant: 'warning'
   },
   {
-    id: 'changeRole',
-    label: 'Change Role',
-    icon: 'users',
-    onClick: () => {}, // To be implemented at runtime
-    requiresSelection: true,
-    variant: 'secondary'
-  },
-  {
     id: 'deactivate',
     label: 'Deactivate',
-    icon: 'slash',
-    onClick: () => {}, // To be implemented at runtime
+    icon: 'ban',
     requiresSelection: true,
     confirmationRequired: true,
     confirmationMessage: 'Are you sure you want to deactivate the selected user(s)?',
-    variant: 'warning'
+    variant: 'warning',
+    showWhen: (selectedItems) => selectedItems.some(item => item.isActive)
   },
   {
-    id: 'delete',
-    label: 'Delete',
-    icon: 'trash',
-    onClick: () => {}, // To be implemented at runtime
+    id: 'activate',
+    label: 'Activate',
+    icon: 'check-circle',
     requiresSelection: true,
     confirmationRequired: true,
-    confirmationMessage: 'Are you sure you want to delete the selected user(s)? This action cannot be undone.',
-    variant: 'danger'
+    confirmationMessage: 'Are you sure you want to activate the selected user(s)?',
+    variant: 'success',
+    showWhen: (selectedItems) => selectedItems.some(item => !item.isActive)
+  },
+  {
+    id: 'refresh',
+    label: 'Refresh',
+    icon: 'refresh-cw',
+    requiresSelection: false,
+    variant: 'ghost'
   }
 ];
 
@@ -191,7 +170,7 @@ export const userDetailFields = [
   { key: 'firstName', label: 'First Name' },
   { key: 'lastName', label: 'Last Name' },
   { key: 'role', label: 'Role' },
-  { key: 'status', label: 'Status' },
+  { key: 'isActive', label: 'Status' },
   { key: 'phoneNumber', label: 'Phone Number' },
   { key: 'lastLogin', label: 'Last Login', type: 'date' },
   { key: 'createdAt', label: 'Created At', type: 'date' },
@@ -244,7 +223,6 @@ export const userFormFields = [
     required: true,
     options: [
       { value: 'admin', label: 'Admin' },
-      { value: 'manager', label: 'Manager' },
       { value: 'employee', label: 'Employee' }
     ],
     defaultValue: 'employee'
@@ -265,6 +243,6 @@ export const userFormFields = [
 // Default query parameters for the user API
 export const defaultUserQueryParams = {
   role: 'all',
-  status: 'active',
+  isActive: 'true',
   searchTerm: ''
 };

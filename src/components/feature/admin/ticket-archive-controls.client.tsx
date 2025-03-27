@@ -1,280 +1,167 @@
+/**
+ * Ticket Archive Controls Component
+ * 
+ * Client component for managing ticket archive operations.
+ * Provides controls for archiving ticket data and images.
+ */
+
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { 
-  ArchiveIcon, 
-  ImageIcon, 
-  FileSpreadsheetIcon, 
-  RefreshCwIcon,
-  CheckCircleIcon,
-  AlertCircleIcon,
-  LoaderIcon
-} from 'lucide-react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { 
-  archiveTicketImages, 
-  fullyArchiveTicket, 
-  restoreTicket, 
-  Ticket 
-} from '@/lib/services/ticketService';
-import { fadeVariants } from '@/lib/animations/variants';
-import { defaultSpring } from '@/lib/animations/springs';
+import { useState, useCallback, useMemo } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button.client';
+import { Switch } from '@/components/ui/switch.client';
+import { Label } from '@/components/ui/label';
+import { Loader2, Archive, AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface TicketArchiveControlsProps {
-  ticket: Ticket;
-  onStatusChange?: (updatedTicket: Ticket) => void;
+  ticketId: string;
+  hasImages: boolean;
+  onArchiveImages: (ticketId: string) => Promise<void>;
+  onArchiveTicket: (ticketId: string) => Promise<void>;
+  className?: string;
 }
 
-type ArchiveAction = 'archive_images' | 'fully_archive' | 'restore';
-
-/**
- * TicketArchiveControls component
- * Provides controls for archiving ticket images, fully archiving tickets, and restoring tickets
- */
-export default function TicketArchiveControls({ ticket, onStatusChange }: TicketArchiveControlsProps) {
-  const router = useRouter();
-  const shouldReduceMotion = useReducedMotion();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [currentAction, setCurrentAction] = useState<ArchiveAction | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+export default function TicketArchiveControls({
+  ticketId,
+  hasImages,
+  onArchiveImages,
+  onArchiveTicket,
+  className
+}: TicketArchiveControlsProps) {
+  const [isArchivingImages, setIsArchivingImages] = useState(false);
+  const [isArchivingTicket, setIsArchivingTicket] = useState(false);
+  const [includeImages, setIncludeImages] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
-  // Open confirmation dialog for archive action
-  const openArchiveDialog = (action: ArchiveAction) => {
-    setCurrentAction(action);
-    setIsDialogOpen(true);
-    setError(null);
-    setSuccess(null);
-  };
-
-  // Get dialog content based on current action
-  const getDialogContent = () => {
-    switch (currentAction) {
-      case 'archive_images':
-        return {
-          title: 'Archive Ticket Images',
-          description: 'This will archive all images associated with this ticket. The ticket data will remain accessible, but images will be moved to long-term storage and may take longer to retrieve.',
-          confirmLabel: 'Archive Images',
-          icon: <ImageIcon className="h-5 w-5 mr-2" />,
-        };
-      case 'fully_archive':
-        return {
-          title: 'Fully Archive Ticket',
-          description: 'This will archive both the ticket data and images. The ticket will be exported to a spreadsheet and removed from the active database. It can still be viewed but cannot be modified.',
-          confirmLabel: 'Fully Archive',
-          icon: <FileSpreadsheetIcon className="h-5 w-5 mr-2" />,
-        };
-      case 'restore':
-        return {
-          title: 'Restore Ticket',
-          description: 'This will restore the ticket to active status. If the ticket was fully archived, it will be re-imported from the archive.',
-          confirmLabel: 'Restore Ticket',
-          icon: <RefreshCwIcon className="h-5 w-5 mr-2" />,
-        };
-      default:
-        return {
-          title: 'Confirm Action',
-          description: 'Are you sure you want to proceed with this action?',
-          confirmLabel: 'Confirm',
-          icon: null,
-        };
-    }
-  };
-
-  // Handle archive action confirmation
-  const handleConfirmAction = async () => {
-    if (!currentAction) return;
+  // Memoize the archive images handler
+  const handleArchiveImages = useCallback(async () => {
+    if (isArchivingImages) return;
     
-    setIsLoading(true);
+    setIsArchivingImages(true);
     setError(null);
-    setSuccess(null);
     
     try {
-      let updatedTicket: Ticket | null = null;
-      
-      switch (currentAction) {
-        case 'archive_images':
-          updatedTicket = await archiveTicketImages(ticket.id);
-          setSuccess('Ticket images have been archived successfully.');
-          break;
-        case 'fully_archive':
-          updatedTicket = await fullyArchiveTicket(ticket.id);
-          setSuccess('Ticket has been fully archived successfully.');
-          break;
-        case 'restore':
-          updatedTicket = await restoreTicket(ticket.id);
-          setSuccess('Ticket has been restored successfully.');
-          break;
-      }
-      
-      if (updatedTicket && onStatusChange) {
-        onStatusChange(updatedTicket);
-      }
-      
-      // Close dialog after a delay to show success message
-      setTimeout(() => {
-        setIsDialogOpen(false);
-        router.refresh();
-      }, 2000);
-      
+      await onArchiveImages(ticketId);
     } catch (err) {
-      setError('An error occurred while processing your request. Please try again.');
-      console.error('Archive action error:', err);
+      setError('Failed to archive images. Please try again.');
+      console.error('Error archiving images:', err);
     } finally {
-      setIsLoading(false);
+      setIsArchivingImages(false);
     }
-  };
+  }, [ticketId, isArchivingImages, onArchiveImages]);
 
-  // Determine which buttons to show based on ticket status
-  const renderActionButtons = () => {
-    switch (ticket.archiveStatus) {
-      case 'active':
-        return (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openArchiveDialog('archive_images')}
-              className="flex items-center"
-            >
-              <ImageIcon className="h-4 w-4 mr-2" />
-              Archive Images
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openArchiveDialog('fully_archive')}
-              className="flex items-center"
-            >
-              <ArchiveIcon className="h-4 w-4 mr-2" />
-              Fully Archive
-            </Button>
-          </>
-        );
-      case 'images_archived':
-        return (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openArchiveDialog('fully_archive')}
-              className="flex items-center"
-            >
-              <ArchiveIcon className="h-4 w-4 mr-2" />
-              Fully Archive
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openArchiveDialog('restore')}
-              className="flex items-center"
-            >
-              <RefreshCwIcon className="h-4 w-4 mr-2" />
-              Restore
-            </Button>
-          </>
-        );
-      case 'fully_archived':
-        return (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openArchiveDialog('restore')}
-            className="flex items-center"
-          >
-            <RefreshCwIcon className="h-4 w-4 mr-2" />
-            Restore
-          </Button>
-        );
-      default:
-        return null;
+  // Memoize the archive ticket handler
+  const handleArchiveTicket = useCallback(async () => {
+    if (isArchivingTicket) return;
+    
+    setIsArchivingTicket(true);
+    setError(null);
+    
+    try {
+      await onArchiveTicket(ticketId);
+    } catch (err) {
+      setError('Failed to archive ticket. Please try again.');
+      console.error('Error archiving ticket:', err);
+    } finally {
+      setIsArchivingTicket(false);
     }
-  };
+  }, [ticketId, isArchivingTicket, onArchiveTicket]);
 
-  const dialogContent = getDialogContent();
+  // Memoize the toggle handler
+  const handleToggleIncludeImages = useCallback((checked: boolean) => {
+    setIncludeImages(checked);
+  }, []);
+
+  // Memoize the error message component
+  const errorMessage = useMemo(() => {
+    if (!error) return null;
+    
+    return (
+      <div className="mt-4 p-3 bg-red-50 text-red-800 rounded-md flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4" />
+        <span className="text-sm">{error}</span>
+      </div>
+    );
+  }, [error]);
 
   return (
-    <>
-      <div className="flex flex-wrap gap-2">
-        {renderActionButtons()}
-      </div>
-      
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{dialogContent.title}</DialogTitle>
-            <DialogDescription>{dialogContent.description}</DialogDescription>
-          </DialogHeader>
-          
-          <AnimatePresence mode="wait">
-            {error && (
-              <motion.div
-                key="error"
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={shouldReduceMotion ? {} : fadeVariants}
-                transition={shouldReduceMotion ? { duration: 0 } : defaultSpring}
-              >
-                <Alert variant="destructive" className="mt-4">
-                  <AlertCircleIcon className="h-4 w-4" />
-                  <AlertTitle>Error</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              </motion.div>
-            )}
-            
-            {success && (
-              <motion.div
-                key="success"
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={shouldReduceMotion ? {} : fadeVariants}
-                transition={shouldReduceMotion ? { duration: 0 } : defaultSpring}
-              >
-                <Alert variant="success" className="mt-4 bg-green-50 text-green-800 border-green-200">
-                  <CheckCircleIcon className="h-4 w-4" />
-                  <AlertTitle>Success</AlertTitle>
-                  <AlertDescription>{success}</AlertDescription>
-                </Alert>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          
-          <DialogFooter className="flex flex-row justify-end gap-2 mt-4">
+    <Card className={cn("w-full", className)}>
+      <CardHeader>
+        <CardTitle className="text-lg">Archive Controls</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {hasImages && (
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <h3 className="font-medium">Archive Images</h3>
+              <p className="text-sm text-gray-500">
+                Archive images to save storage space while keeping ticket data accessible.
+              </p>
+            </div>
             <Button
               variant="outline"
-              onClick={() => setIsDialogOpen(false)}
-              disabled={isLoading}
+              onClick={handleArchiveImages}
+              disabled={isArchivingImages}
+              className="w-full"
             >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirmAction}
-              disabled={isLoading}
-              className="flex items-center"
-            >
-              {isLoading ? (
+              {isArchivingImages ? (
                 <>
-                  <LoaderIcon className="h-4 w-4 mr-2 animate-spin" />
-                  Processing...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Archiving Images...
                 </>
               ) : (
                 <>
-                  {dialogContent.icon}
-                  {dialogContent.confirmLabel}
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive Images Only
                 </>
               )}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          </div>
+        )}
+
+        <div className="space-y-4 pt-4 border-t">
+          <div className="flex flex-col gap-2">
+            <h3 className="font-medium">Archive Entire Ticket</h3>
+            <p className="text-sm text-gray-500">
+              Archive the entire ticket including all data and references.
+            </p>
+          </div>
+          
+          {hasImages && (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="include-images"
+                checked={includeImages}
+                onCheckedChange={handleToggleIncludeImages}
+              />
+              <Label htmlFor="include-images">Include images in archive</Label>
+            </div>
+          )}
+          
+          <Button
+            variant="destructive"
+            onClick={handleArchiveTicket}
+            disabled={isArchivingTicket}
+            className="w-full"
+          >
+            {isArchivingTicket ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Archiving Ticket...
+              </>
+            ) : (
+              <>
+                <Archive className="mr-2 h-4 w-4" />
+                Archive Entire Ticket
+              </>
+            )}
+          </Button>
+        </div>
+        
+        {errorMessage}
+      </CardContent>
+    </Card>
   );
 }

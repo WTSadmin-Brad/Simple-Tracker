@@ -3,43 +3,68 @@
  * 
  * Provides a React hook interface for using the imageService
  * Makes it easy to manage image uploads with React state
+ * with proper error handling, progress tracking, and validation.
+ * 
+ * @source directory-structure.md - "Custom Hooks" section
+ * @source Ticket_Submission.md - "Image Upload Flow" section
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import imageService, { ImageData, ValidationResult } from '@/lib/services/image-service';
 
+/**
+ * Options for configuring the useImageUpload hook
+ */
 interface UseImageUploadOptions {
+  /** Called when an upload starts */
   onUploadStart?: (file: File) => void;
+  /** Called when upload progress updates */
   onUploadProgress?: (id: string, progress: number) => void;
+  /** Called when an upload completes successfully */
   onUploadComplete?: (imageData: ImageData) => void;
+  /** Called when an upload encounters an error */
   onUploadError?: (error: Error, file: File) => void;
+  /** Whether to validate images immediately when selected */
   validateOnSelect?: boolean;
 }
 
+/**
+ * Return type for useImageUpload hook
+ */
 interface UseImageUploadReturn {
-  // Upload methods
+  /** Upload a single image file */
   uploadImage: (file: File) => Promise<ImageData>;
+  /** Upload multiple image files sequentially */
   uploadMultipleImages: (files: File[]) => Promise<ImageData[]>;
+  /** Cancel an in-progress upload */
   cancelUpload: (id: string) => void;
+  /** Retry a failed upload */
   retryUpload: (id: string, file: File) => Promise<ImageData>;
   
-  // Validation and utility methods
+  /** Validate an image file */
   validateImage: (file: File) => ValidationResult;
+  /** Generate a preview URL for an image file */
   generatePreview: (file: File) => Promise<string>;
+  /** Revoke a previously generated image URL to prevent memory leaks */
   revokeImageUrl: (url: string) => void;
   
-  // State
+  /** Whether any uploads are currently in progress */
   isUploading: boolean;
+  /** Progress percentage (0-100) for each upload by ID */
   uploadProgress: Record<string, number>;
+  /** Error messages for failed uploads by ID */
   uploadErrors: Record<string, string>;
   
-  // Reset state
+  /** Reset all state (progress, errors, etc.) */
   resetState: () => void;
 }
 
 /**
  * Hook for managing image uploads
  * Provides methods and state for image upload operations
+ * 
+ * @param options Configuration options for the hook
+ * @returns Object containing upload methods and state
  */
 export const useImageUpload = (options: UseImageUploadOptions = {}): UseImageUploadReturn => {
   // Destructure options with defaults
@@ -57,7 +82,9 @@ export const useImageUpload = (options: UseImageUploadOptions = {}): UseImageUpl
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
 
-  // Reset all state
+  /**
+   * Reset all state to initial values
+   */
   const resetState = useCallback(() => {
     setIsUploading(false);
     setActiveUploads(new Set());
@@ -65,7 +92,13 @@ export const useImageUpload = (options: UseImageUploadOptions = {}): UseImageUpl
     setUploadErrors({});
   }, []);
 
-  // Upload a single image
+  /**
+   * Upload a single image file
+   * 
+   * @param file The image file to upload
+   * @returns Promise resolving to the uploaded image data
+   * @throws Error if validation or upload fails
+   */
   const uploadImage = useCallback(async (file: File): Promise<ImageData> => {
     // Validate first if requested
     if (validateOnSelect) {
@@ -167,7 +200,12 @@ export const useImageUpload = (options: UseImageUploadOptions = {}): UseImageUpl
     }
   }, [validateOnSelect, onUploadStart, onUploadProgress, onUploadComplete, onUploadError]);
 
-  // Upload multiple images
+  /**
+   * Upload multiple image files sequentially
+   * 
+   * @param files Array of image files to upload
+   * @returns Promise resolving to array of uploaded image data
+   */
   const uploadMultipleImages = useCallback(async (files: File[]): Promise<ImageData[]> => {
     const results: ImageData[] = [];
     
@@ -185,8 +223,12 @@ export const useImageUpload = (options: UseImageUploadOptions = {}): UseImageUpl
     return results;
   }, [uploadImage]);
 
-  // Cancel an upload
-  const cancelUpload = useCallback((id: string) => {
+  /**
+   * Cancel an in-progress upload
+   * 
+   * @param id ID of the upload to cancel
+   */
+  const cancelUpload = useCallback((id: string): void => {
     imageService.cancelUpload(id);
     
     setActiveUploads(prev => {
@@ -199,7 +241,14 @@ export const useImageUpload = (options: UseImageUploadOptions = {}): UseImageUpl
     });
   }, []);
 
-  // Retry a failed upload
+  /**
+   * Retry a failed upload
+   * 
+   * @param id ID of the failed upload
+   * @param file The image file to retry
+   * @returns Promise resolving to the uploaded image data
+   * @throws Error if retry fails
+   */
   const retryUpload = useCallback(async (id: string, file: File): Promise<ImageData> => {
     // Clear previous error
     setUploadErrors(prev => {

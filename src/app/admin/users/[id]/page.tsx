@@ -8,8 +8,8 @@
 import { Metadata } from 'next';
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
-import AdminHeader from '../../_components/AdminHeader';
-import EntityDetailView from '@/components/feature/admin/data-grid/EntityDetailView.client';
+import AdminHeader from '../../_components/admin-header';
+import { EntityDetailView } from '@/components/feature/admin/data-grid';
 import { userDetailFields, userDetailTabs } from '@/components/feature/admin/config';
 import { getUserById } from '@/lib/services/userService';
 import { Skeleton } from '@/components/ui/skeleton';

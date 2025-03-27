@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 // User preferences interface
 interface Preferences {
@@ -48,40 +48,105 @@ const defaultPreferences: Preferences = {
   recentJobsites: []
 };
 
-// Placeholder for the actual store implementation
+// Action creators
+const addRecentTruckAction = (truckId: string) => (set: any, get: any) => {
+  const { preferences } = get();
+  
+  // Filter out duplicates and add new truck to the beginning
+  const updatedTrucks = [
+    truckId,
+    ...preferences.recentTrucks.filter(id => id !== truckId)
+  ].slice(0, 5); // Keep only the 5 most recent
+  
+  set({
+    preferences: { 
+      ...preferences, 
+      recentTrucks: updatedTrucks 
+    }
+  });
+};
+
+const addRecentJobsiteAction = (jobsiteId: string) => (set: any, get: any) => {
+  const { preferences } = get();
+  
+  // Filter out duplicates and add new jobsite to the beginning
+  const updatedJobsites = [
+    jobsiteId,
+    ...preferences.recentJobsites.filter(id => id !== jobsiteId)
+  ].slice(0, 5); // Keep only the 5 most recent
+  
+  set({
+    preferences: { 
+      ...preferences, 
+      recentJobsites: updatedJobsites 
+    }
+  });
+};
+
 export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set, get) => ({
       // Initial state
       preferences: defaultPreferences,
       
-      // Actions - placeholders to be implemented
+      // Actions
       setTheme: (theme) => set(state => ({
         preferences: { ...state.preferences, theme }
       })),
+      
       setReducedMotion: (reducedMotion) => set(state => ({
         preferences: { ...state.preferences, reducedMotion }
       })),
+      
       setDefaultView: (defaultView) => set(state => ({
         preferences: { ...state.preferences, defaultView }
       })),
+      
       setNotificationsEnabled: (notificationsEnabled) => set(state => ({
         preferences: { ...state.preferences, notificationsEnabled }
       })),
-      addRecentTruck: (truckId) => set(state => {
-        // Placeholder implementation - will handle duplicates and limit array size
-        return { preferences: { ...state.preferences, recentTrucks: [truckId, ...state.preferences.recentTrucks].slice(0, 5) } };
-      }),
-      addRecentJobsite: (jobsiteId) => set(state => {
-        // Placeholder implementation - will handle duplicates and limit array size
-        return { preferences: { ...state.preferences, recentJobsites: [jobsiteId, ...state.preferences.recentJobsites].slice(0, 5) } };
-      }),
+      
+      addRecentTruck: (truckId) => addRecentTruckAction(truckId)(set, get),
+      
+      addRecentJobsite: (jobsiteId) => addRecentJobsiteAction(jobsiteId)(set, get),
+      
       clearRecentSelections: () => set(state => ({
-        preferences: { ...state.preferences, recentTrucks: [], recentJobsites: [] }
+        preferences: { 
+          ...state.preferences, 
+          recentTrucks: [], 
+          recentJobsites: [] 
+        }
       }))
     }),
     {
       name: 'user-preferences-storage',
+      storage: createJSONStorage(() => localStorage)
     }
   )
 );
+
+// Selector hooks for optimized component rendering
+export const useThemePreferences = () => ({
+  theme: usePreferencesStore(state => state.preferences.theme),
+  reducedMotion: usePreferencesStore(state => state.preferences.reducedMotion),
+  setTheme: usePreferencesStore(state => state.setTheme),
+  setReducedMotion: usePreferencesStore(state => state.setReducedMotion)
+});
+
+export const useViewPreferences = () => ({
+  defaultView: usePreferencesStore(state => state.preferences.defaultView),
+  setDefaultView: usePreferencesStore(state => state.setDefaultView)
+});
+
+export const useNotificationPreferences = () => ({
+  notificationsEnabled: usePreferencesStore(state => state.preferences.notificationsEnabled),
+  setNotificationsEnabled: usePreferencesStore(state => state.setNotificationsEnabled)
+});
+
+export const useRecentSelections = () => ({
+  recentTrucks: usePreferencesStore(state => state.preferences.recentTrucks),
+  recentJobsites: usePreferencesStore(state => state.preferences.recentJobsites),
+  addRecentTruck: usePreferencesStore(state => state.addRecentTruck),
+  addRecentJobsite: usePreferencesStore(state => state.addRecentJobsite),
+  clearRecentSelections: usePreferencesStore(state => state.clearRecentSelections)
+});

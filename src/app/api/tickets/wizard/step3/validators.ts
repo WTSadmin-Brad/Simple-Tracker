@@ -3,34 +3,48 @@
  * Validates image uploads (up to 10 images)
  */
 import { z } from 'zod';
-
-// Image reference schema
-const imageRefSchema = z.object({
-  id: z.string(),
-  url: z.string().url(),
-  thumbnailUrl: z.string().url().optional(),
-  filename: z.string(),
-  size: z.number().int().positive(),
-});
-
-// Image upload validation schema
-export const imageUploadSchema = z.object({
-  images: z.array(imageRefSchema).max(10, 'Maximum 10 images allowed'),
-});
-
-// Type for validated data
-export type ImageUploadData = z.infer<typeof imageUploadSchema>;
+import { imageUploadSchema, ImageUploadData, ImageData } from '@/lib/validation/wizardSchemas';
+import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_SIZE, MAX_IMAGES } from '@/lib/helpers/imageHelpers';
 
 // Validator function
 export async function validateImageUpload(data: unknown): Promise<ImageUploadData> {
-  return imageUploadSchema.parseAsync(data);
+  const validatedData = await imageUploadSchema.parseAsync(data);
+  
+  // Validate maximum number of images
+  if (validatedData.images.length > MAX_IMAGES) {
+    throw new Error(`Too many images. Maximum allowed is ${MAX_IMAGES}.`);
+  }
+  
+  return validatedData;
 }
 
 // Helper to check image file types
 export function isValidImageType(mimeType: string): boolean {
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-  return validTypes.includes(mimeType);
+  return ALLOWED_IMAGE_TYPES.includes(mimeType);
 }
 
-// TODO: Implement image size validation (max 10MB per image)
-// TODO: Implement integration with Firebase Storage
+// Helper to check if image size is within limits
+export function isValidImageSize(size: number): boolean {
+  return size <= MAX_IMAGE_SIZE;
+}
+
+// Helper to validate a single image
+export function validateSingleImage(image: File): { valid: boolean; error?: string } {
+  // Check file type
+  if (!isValidImageType(image.type)) {
+    return {
+      valid: false,
+      error: `Invalid file type. Allowed types: ${ALLOWED_IMAGE_TYPES.join(', ')}`
+    };
+  }
+  
+  // Check file size
+  if (!isValidImageSize(image.size)) {
+    return {
+      valid: false,
+      error: `Image size exceeds the maximum allowed size (${MAX_IMAGE_SIZE / (1024 * 1024)}MB).`
+    };
+  }
+  
+  return { valid: true };
+}

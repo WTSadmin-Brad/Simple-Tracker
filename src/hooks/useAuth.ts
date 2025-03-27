@@ -5,7 +5,7 @@
  * with proper error handling, token refresh, and role-based permissions.
  * 
  * @source directory-structure.md - "Custom Hooks" section
- * @source Employee_Flows.md - "Authentication Flow" section
+ * @source Authentication_Flow.md - "User Authentication" section
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -25,9 +25,37 @@ const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000;
 const MIN_ACTIVITY_INTERVAL = 15 * 60 * 1000;
 
 /**
- * Hook for managing authentication state and operations
+ * Return type for useAuth hook
  */
-export function useAuth() {
+interface UseAuthReturn {
+  /** Whether the user is authenticated */
+  isAuthenticated: boolean;
+  /** Whether authentication is in progress */
+  isLoading: boolean;
+  /** Current user data */
+  user: UserData | null;
+  /** Authentication token */
+  token: string | null;
+  /** Token expiration timestamp */
+  expiresAt: number | null;
+  /** Authentication error message */
+  error: string | null;
+  /** Login with email and password */
+  login: (email: string, password: string) => Promise<boolean>;
+  /** Logout the current user */
+  logout: () => Promise<boolean>;
+  /** Check if user has specific role(s) */
+  hasRole: (role: UserRole | UserRole[]) => boolean;
+  /** Refresh the authentication token */
+  refreshToken: () => Promise<boolean>;
+}
+
+/**
+ * Hook for managing authentication state and operations
+ * 
+ * @returns Authentication methods and state
+ */
+export function useAuth(): UseAuthReturn {
   const auth = getFirebaseAuth();
   const firestore = getFirestoreClient();
   const router = useRouter();
@@ -53,8 +81,12 @@ export function useAuth() {
 
   /**
    * Login function
+   * 
+   * @param email User email
+   * @param password User password
+   * @returns Promise resolving to success status
    */
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     if (!auth) {
       throw new AuthError(
         'Authentication service is not available',
@@ -183,8 +215,10 @@ export function useAuth() {
 
   /**
    * Logout function
+   * 
+   * @returns Promise resolving to success status
    */
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     
     try {
@@ -229,8 +263,11 @@ export function useAuth() {
 
   /**
    * Check if the current user has a specific role
+   * 
+   * @param role Role or array of roles to check
+   * @returns Boolean indicating if user has the specified role(s)
    */
-  const hasRole = useCallback((role: UserRole | UserRole[]) => {
+  const hasRole = useCallback((role: UserRole | UserRole[]): boolean => {
     if (!isAuthenticated || !user) {
       return false;
     }
@@ -241,8 +278,10 @@ export function useAuth() {
 
   /**
    * Refresh the authentication token
+   * 
+   * @returns Promise resolving to success status
    */
-  const refreshToken = useCallback(async () => {
+  const refreshToken = useCallback(async (): Promise<boolean> => {
     if (!auth?.currentUser || !token) {
       return false;
     }
@@ -291,8 +330,10 @@ export function useAuth() {
 
   /**
    * Initialize auth state from server session (if available)
+   * 
+   * @returns Promise resolving when initialization is complete
    */
-  const initializeAuthFromSession = useCallback(async () => {
+  const initializeAuthFromSession = useCallback(async (): Promise<void> => {
     if (isAuthenticated) {
       return; // Already authenticated
     }
@@ -363,7 +404,7 @@ export function useAuth() {
   /**
    * Track user activity for token refresh
    */
-  const trackActivity = useCallback(() => {
+  const trackActivity = useCallback((): void => {
     const now = Date.now();
     
     // Only update if significant time has passed to avoid unnecessary updates

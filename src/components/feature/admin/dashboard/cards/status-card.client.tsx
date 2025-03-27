@@ -5,15 +5,15 @@
  * @source Admin_Flows.md - "Dashboard" section - "Status card"
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { RefreshCcw, AlertCircle, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import DashboardCard from '../DashboardCard.client';
-import { CardSize } from '../DashboardCard.client';
-import dashboardService, { StatusData } from '@/lib/services/dashboardService';
+import { AlertCircle, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
+import DashboardCard from '../dashboard-card.client';
+import { CardSize } from '../dashboard-card.client';
+import dashboardService from '@/lib/services/dashboardService';
+import { useCardData } from '../hooks';
+import { CardLoadingState, CardErrorState, CardEmptyState, CardFooterWithRefresh } from '../components';
 
 interface StatusCardProps {
   id: string;
@@ -47,50 +47,24 @@ const StatusCard = ({
   onResize
 }: StatusCardProps) => {
   const prefersReducedMotion = useReducedMotion();
-  const [statusData, setStatusData] = useState<StatusData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   
-  // Fetch status data
+  // Create fetch function for the hook
   const fetchStatusData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Use dashboard service to fetch system status
-      const result = await dashboardService.fetchStatusData(
-        systems,
-        showHistory
-      );
-      
-      setStatusData(result);
-      setLastUpdated(result.lastUpdated);
-    } catch (err) {
-      setError('Failed to load system status');
-      console.error('Error fetching system status:', err);
-    } finally {
-      setIsLoading(false);
-    }
+    // Use dashboard service to fetch system status
+    return await dashboardService.fetchStatusData(
+      systems,
+      showHistory
+    );
   }, [systems, showHistory]);
   
-  // Initial data fetch
-  useEffect(() => {
-    fetchStatusData();
-  }, [fetchStatusData]);
-  
-  // Set up refresh interval
-  useEffect(() => {
-    if (refreshInterval > 0) {
-      const intervalId = setInterval(fetchStatusData, refreshInterval * 1000);
-      return () => clearInterval(intervalId);
-    }
-  }, [refreshInterval, fetchStatusData]);
-  
-  // Format the last updated time
-  const formatLastUpdated = () => {
-    return lastUpdated.toLocaleTimeString();
-  };
+  // Use the shared hook for data fetching
+  const { 
+    data: statusData, 
+    isLoading, 
+    error, 
+    lastUpdated, 
+    refreshData 
+  } = useCardData(fetchStatusData, refreshInterval, [systems, showHistory]);
   
   // Get status icon and color
   const getStatusDetails = (status: 'operational' | 'degraded' | 'outage') => {
@@ -126,35 +100,19 @@ const StatusCard = ({
     }
   };
   
-  // Render loading state
-  const renderLoading = () => {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
-      </div>
-    );
-  };
-  
-  // Render error state
-  const renderError = () => {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-red-500 p-4">
-        <div className="text-2xl mb-2">⚠️</div>
-        <div className="mb-2">{error}</div>
-        <Button 
-          onClick={fetchStatusData}
-          variant="outline"
-          size="sm"
-        >
-          Retry
-        </Button>
-      </div>
-    );
-  };
-  
   // Render status content
   const renderStatusContent = () => {
-    if (!statusData || !statusData.systems) return null;
+    if (isLoading) {
+      return <CardLoadingState />;
+    }
+    
+    if (error) {
+      return <CardErrorState error={error} onRetry={refreshData} />;
+    }
+    
+    if (!statusData || !statusData.systems || statusData.systems.length === 0) {
+      return <CardEmptyState message="No system status available" onRefresh={refreshData} />;
+    }
     
     return (
       <div className="space-y-3 p-4">
@@ -189,64 +147,42 @@ const StatusCard = ({
             </motion.div>
           );
         })}
-      </div>
-    );
-  };
-  
-  // Render history content
-  const renderHistoryContent = () => {
-    if (!statusData || !statusData.systems || !showHistory) return null;
-    
-    // Find systems with history
-    const systemsWithHistory = statusData.systems.filter(
-      system => system.history && system.history.length > 0
-    );
-    
-    if (systemsWithHistory.length === 0) return null;
-    
-    return (
-      <div className="border-t border-gray-100 dark:border-gray-800 p-4">
-        <h4 className="text-sm font-medium mb-2">Recent History</h4>
-        <div className="space-y-3">
-          {systemsWithHistory.map(system => (
-            <div key={`${system.name}-history`} className="text-xs">
-              <div className="font-medium mb-1">{system.name}</div>
-              <div className="space-y-1">
-                {system.history && system.history.slice(0, 3).map((event, index) => {
-                  const { color, label } = getStatusDetails(event.status);
-                  const timestamp = event.timestamp ? 
-                    new Date(event.timestamp).toLocaleString() : '';
-                  
-                  return (
-                    <div 
-                      key={`${system.name}-event-${index}`}
-                      className="flex justify-between"
-                    >
-                      <span className={color}>{label}</span>
-                      <span className="text-gray-500">{timestamp}</span>
-                    </div>
-                  );
-                })}
-              </div>
+        
+        {showHistory && statusData.history && statusData.history.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+            <h4 className="text-sm font-medium mb-2">Recent History</h4>
+            <div className="space-y-2">
+              {statusData.history.map((item, index) => (
+                <motion.div
+                  key={`${item.system}-${item.timestamp}`}
+                  className="text-xs"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ 
+                    delay: prefersReducedMotion ? 0 : index * 0.05,
+                    duration: prefersReducedMotion ? 0.1 : 0.2
+                  }}
+                >
+                  <div className="flex items-center">
+                    <span className={getStatusDetails(item.status).color}>
+                      {getStatusDetails(item.status).icon}
+                    </span>
+                    <span className="ml-2 font-medium">{item.system}</span>
+                    <span className="ml-auto text-gray-500">
+                      {new Date(item.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <p className="ml-6 text-gray-600 dark:text-gray-400">
+                    {item.message}
+                  </p>
+                </motion.div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
     );
   };
-  
-  // Render refresh button
-  const RefreshButton = () => (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-7 w-7 rounded-full"
-      onClick={fetchStatusData}
-      title="Refresh status"
-    >
-      <RefreshCcw className="h-4 w-4" />
-    </Button>
-  );
   
   return (
     <DashboardCard
@@ -257,26 +193,14 @@ const StatusCard = ({
       onEdit={onEdit}
       onRemove={onRemove}
       onResize={onResize}
-      headerActions={<RefreshButton />}
-      className="status-card"
+      footer={
+        <CardFooterWithRefresh 
+          lastUpdated={lastUpdated} 
+          onRefresh={refreshData} 
+        />
+      }
     >
-      <div className="h-full flex flex-col">
-        {isLoading ? (
-          renderLoading()
-        ) : error ? (
-          renderError()
-        ) : (
-          <>
-            <div className="flex-grow overflow-auto">
-              {renderStatusContent()}
-            </div>
-            {showHistory && renderHistoryContent()}
-            <div className="text-xs text-gray-500 text-right px-4 pb-2">
-              Last updated: {formatLastUpdated()}
-            </div>
-          </>
-        )}
-      </div>
+      {renderStatusContent()}
     </DashboardCard>
   );
 };

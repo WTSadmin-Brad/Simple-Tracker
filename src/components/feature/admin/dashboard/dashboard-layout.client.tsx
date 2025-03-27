@@ -11,13 +11,13 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useDashboardStore } from '@/stores/dashboardStore';
 import { Button } from '@/components/ui/button';
 import { ArrowsMaximize, ArrowsMinimize, GripVertical, Plus, X } from 'lucide-react';
-import DashboardCard from './DashboardCard.client';
-import ChartCard from './cards/ChartCard.client';
-import MetricCard from './cards/MetricCard.client';
-import TableCard from './cards/TableCard.client';
-import StatusCard from './cards/StatusCard.client';4
-import ActivityCard from './cards/ActivityCard.client';
-import CardConfigPanel from './CardConfigPanel.client';
+import DashboardCard from './dashboard-card.client';
+import ChartCard from './cards/chart-card.client';
+import MetricCard from './cards/metric-card.client';
+import TableCard from './cards/table-card.client';
+import StatusCard from './cards/status-card.client';
+import ActivityCard from './cards/activity-card.client';
+import CardConfigPanel from './card-config-panel.client';
 
 // Import types from dashboardStore
 import type { 

@@ -3,23 +3,33 @@
  * Validates the 6 counters with specific ranges
  */
 import { z } from 'zod';
+import { categoriesSchema, CategoriesData } from '@/lib/validation/wizardSchemas';
 
-// Categories validation schema
-export const categoriesSchema = z.object({
-  counter1: z.number().int().min(0).max(150),
-  counter2: z.number().int().min(0).max(150),
-  counter3: z.number().int().min(0).max(150),
-  counter4: z.number().int().min(0).max(150),
-  counter5: z.number().int().min(0).max(150),
-  counter6: z.number().int().min(0).max(150),
-});
-
-// Type for validated data
-export type CategoriesData = z.infer<typeof categoriesSchema>;
+// Constants for category validation
+export const TOTAL_COUNT_MIN = 1;
+export const TOTAL_COUNT_MAX = 900;
 
 // Validator function
 export async function validateCategories(data: unknown): Promise<CategoriesData> {
-  return categoriesSchema.parseAsync(data);
+  const validatedData = await categoriesSchema.parseAsync(data);
+  
+  // Additional validation for total counts
+  const totalCount = calculateTotalCount(validatedData);
+  
+  if (totalCount < TOTAL_COUNT_MIN) {
+    throw new Error('Total count must be at least 1 across all categories');
+  }
+  
+  if (totalCount > TOTAL_COUNT_MAX) {
+    throw new Error(`Total count cannot exceed ${TOTAL_COUNT_MAX}`);
+  }
+  
+  return validatedData;
+}
+
+// Helper to calculate total count across all categories
+export function calculateTotalCount(categories: CategoriesData): number {
+  return Object.values(categories).reduce((sum, value) => sum + value, 0);
 }
 
 // Helper to determine counter color based on value
@@ -29,6 +39,3 @@ export function getCounterColor(value: number): string {
   if (value >= 85 && value <= 124) return 'green';
   return 'gold'; // 125-150
 }
-
-// TODO: Add validation for total counts across all categories
-// TODO: Implement integration with Firebase for data persistence

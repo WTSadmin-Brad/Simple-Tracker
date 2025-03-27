@@ -1,18 +1,26 @@
 /**
  * Ticket API client functions
- * 
- * @source directory-structure.md - "API client functions" section
- * @source Employee_Flows.md - "Ticket Submission Wizard Flow" section
+ * Provides a clean interface for ticket-related API operations
  */
 
-import { ApiResponse } from '../../types/api';
-import { Ticket, WizardData, WizardStep1Data, WizardStep2Data, WizardStep3Data, TempImageUploadResponse } from '../../types/tickets';
+import { apiRequest, apiFormRequest } from './apiClient';
+import { ApiResponse } from '@/types/api';
+import { Ticket, WizardData, WizardStep1Data, WizardStep2Data, WizardStep3Data, TempImageUploadResponse, TicketFilterParams } from '@/types/tickets';
 
 /**
- * Base URL for ticket API endpoints
+ * API endpoints for ticket operations
  */
-const TICKET_API_BASE = '/api/tickets';
-const WIZARD_API_BASE = '/api/tickets/wizard';
+const ENDPOINTS = {
+  TICKETS: '/api/tickets',
+  TICKET: (id: string) => `/api/tickets/${id}`,
+  WIZARD: '/api/tickets/wizard',
+  WIZARD_STEP1: '/api/tickets/wizard/step1',
+  WIZARD_STEP2: '/api/tickets/wizard/step2',
+  WIZARD_STEP3: '/api/tickets/wizard/step3',
+  WIZARD_COMPLETE: '/api/tickets/wizard/complete',
+  TEMP_IMAGES: '/api/tickets/temp-images',
+  TEMP_IMAGE: (id: string) => `/api/tickets/temp-images/${id}`,
+};
 
 /**
  * Submit a complete ticket
@@ -23,63 +31,25 @@ const WIZARD_API_BASE = '/api/tickets/wizard';
 export async function submitTicket(
   wizardData: WizardData
 ): Promise<ApiResponse<Ticket>> {
-  try {
-    const response = await fetch(
-      `${WIZARD_API_BASE}/complete`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(wizardData)
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to submit ticket');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to submit ticket'
-    };
-  }
+  return apiRequest<Ticket>(ENDPOINTS.WIZARD_COMPLETE, {
+    method: 'POST',
+    body: wizardData
+  });
 }
 
 /**
  * Save wizard step 1 data (Basic Info)
  * 
- * @param data - Step 1 data (date, jobsite, truck)
+ * @param data - Step 1 data (date, truck, jobsite)
  * @returns Promise with success status
  */
 export async function saveWizardStep1(
   data: WizardStep1Data
 ): Promise<ApiResponse<void>> {
-  try {
-    const response = await fetch(
-      `${WIZARD_API_BASE}/1`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to save step 1 data');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to save step 1 data'
-    };
-  }
+  return apiRequest<void>(ENDPOINTS.WIZARD_STEP1, {
+    method: 'POST',
+    body: data
+  });
 }
 
 /**
@@ -91,29 +61,10 @@ export async function saveWizardStep1(
 export async function saveWizardStep2(
   data: WizardStep2Data
 ): Promise<ApiResponse<void>> {
-  try {
-    const response = await fetch(
-      `${WIZARD_API_BASE}/2`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to save step 2 data');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to save step 2 data'
-    };
-  }
+  return apiRequest<void>(ENDPOINTS.WIZARD_STEP2, {
+    method: 'POST',
+    body: data
+  });
 }
 
 /**
@@ -125,29 +76,10 @@ export async function saveWizardStep2(
 export async function saveWizardStep3(
   data: WizardStep3Data
 ): Promise<ApiResponse<void>> {
-  try {
-    const response = await fetch(
-      `${WIZARD_API_BASE}/3`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to save step 3 data');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to save step 3 data'
-    };
-  }
+  return apiRequest<void>(ENDPOINTS.WIZARD_STEP3, {
+    method: 'POST',
+    body: data
+  });
 }
 
 /**
@@ -156,28 +88,7 @@ export async function saveWizardStep3(
  * @returns Promise with saved wizard data or null if no data exists
  */
 export async function getWizardData(): Promise<ApiResponse<WizardData>> {
-  try {
-    const response = await fetch(
-      WIZARD_API_BASE,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to get wizard data');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to get wizard data'
-    };
-  }
+  return apiRequest<WizardData>(ENDPOINTS.WIZARD);
 }
 
 /**
@@ -189,29 +100,10 @@ export async function getWizardData(): Promise<ApiResponse<WizardData>> {
 export async function uploadTempImage(
   file: File
 ): Promise<ApiResponse<TempImageUploadResponse>> {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    const response = await fetch(
-      `${TICKET_API_BASE}/images/temp`,
-      {
-        method: 'POST',
-        body: formData
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to upload image');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to upload image'
-    };
-  }
+  const formData = new FormData();
+  formData.append('image', file);
+  
+  return apiFormRequest<TempImageUploadResponse>(ENDPOINTS.TEMP_IMAGES, formData);
 }
 
 /**
@@ -223,26 +115,33 @@ export async function uploadTempImage(
 export async function deleteTempImage(
   tempId: string
 ): Promise<ApiResponse<void>> {
-  try {
-    const response = await fetch(
-      `${TICKET_API_BASE}/images/temp/${tempId}`,
-      {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to delete image');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to delete image'
-    };
-  }
+  return apiRequest<void>(ENDPOINTS.TEMP_IMAGE(tempId), {
+    method: 'DELETE'
+  });
+}
+
+/**
+ * Get tickets with optional filtering
+ * 
+ * @param filters - Optional filters for tickets
+ * @returns Promise with list of tickets
+ */
+export async function getTickets(
+  filters: TicketFilterParams = {}
+): Promise<ApiResponse<Ticket[]>> {
+  return apiRequest<Ticket[]>(ENDPOINTS.TICKETS, {
+    params: filters as any
+  });
+}
+
+/**
+ * Get a single ticket by ID
+ * 
+ * @param id - Ticket ID
+ * @returns Promise with ticket data
+ */
+export async function getTicketById(
+  id: string
+): Promise<ApiResponse<Ticket>> {
+  return apiRequest<Ticket>(ENDPOINTS.TICKET(id));
 }

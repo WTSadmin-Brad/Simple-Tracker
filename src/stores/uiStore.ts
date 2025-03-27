@@ -4,6 +4,7 @@
  */
 
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 // UI state interface
 interface UIState {
@@ -33,26 +34,68 @@ interface UIState {
   toggleSidebar: () => void;
 }
 
-// Placeholder for the actual store implementation
-export const useUIStore = create<UIState>()((set, get) => ({
-  // Initial state
-  activeBottomSheet: null,
-  activeModal: null,
-  toasts: [],
-  isSidebarOpen: false,
-  
-  // Actions - placeholders to be implemented
-  openBottomSheet: (id) => set({ activeBottomSheet: id }),
-  closeBottomSheet: () => set({ activeBottomSheet: null }),
-  openModal: (id) => set({ activeModal: id }),
-  closeModal: () => set({ activeModal: null }),
-  addToast: (message, type) => set(state => ({
+// Action creators
+const createToastAction = (message: string, type: 'info' | 'success' | 'warning' | 'error') => 
+  (set: any) => set((state: UIState) => ({
     toasts: [...state.toasts, { id: Date.now().toString(), message, type }]
-  })),
-  removeToast: (id) => set(state => ({
+  }));
+
+const removeToastAction = (id: string) => 
+  (set: any) => set((state: UIState) => ({
     toasts: state.toasts.filter(toast => toast.id !== id)
-  })),
-  toggleSidebar: () => set(state => ({
-    isSidebarOpen: !state.isSidebarOpen
-  }))
-}));
+  }));
+
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      // Initial state
+      activeBottomSheet: null,
+      activeModal: null,
+      toasts: [],
+      isSidebarOpen: false,
+      
+      // Actions
+      openBottomSheet: (id) => set({ activeBottomSheet: id }),
+      closeBottomSheet: () => set({ activeBottomSheet: null }),
+      openModal: (id) => set({ activeModal: id }),
+      closeModal: () => set({ activeModal: null }),
+      addToast: (message, type) => createToastAction(message, type)(set),
+      removeToast: (id) => removeToastAction(id)(set),
+      toggleSidebar: () => set((state) => ({
+        isSidebarOpen: !state.isSidebarOpen
+      }))
+    }),
+    {
+      name: 'ui-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        // Only persist UI preferences that should be remembered
+        isSidebarOpen: state.isSidebarOpen
+      })
+    }
+  )
+);
+
+// Selector hooks for optimized component rendering
+export const useBottomSheet = () => ({
+  activeBottomSheet: useUIStore(state => state.activeBottomSheet),
+  openBottomSheet: useUIStore(state => state.openBottomSheet),
+  closeBottomSheet: useUIStore(state => state.closeBottomSheet)
+});
+
+export const useModal = () => ({
+  activeModal: useUIStore(state => state.activeModal),
+  openModal: useUIStore(state => state.openModal),
+  closeModal: useUIStore(state => state.closeModal)
+});
+
+export const useToasts = () => ({
+  toasts: useUIStore(state => state.toasts),
+  addToast: useUIStore(state => state.addToast),
+  removeToast: useUIStore(state => state.removeToast)
+});
+
+export const useSidebar = () => ({
+  isSidebarOpen: useUIStore(state => state.isSidebarOpen),
+  toggleSidebar: useUIStore(state => state.toggleSidebar)
+});

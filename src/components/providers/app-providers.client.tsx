@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * AppProviders.client.tsx
+ * app-providers.client.tsx
  * Client component that wraps the application with all providers
  * Centralizes provider management for better organization
  */
 
 import { ReactNode } from 'react';
-import WizardStateProvider from './WizardStateProvider.client';
+import WizardStateProvider from './wizard-state-provider.client';
+import QueryClientProvider from './query-client-provider.client';
 import Toast from '@/components/common/toast.client';
 
 interface AppProvidersProps {
@@ -16,21 +17,24 @@ interface AppProvidersProps {
 
 /**
  * Application providers component
- * Wraps the application with all necessary providers
- * Includes state management, UI components, and more
+ * Wraps the application with all necessary providers in the correct order
+ * 
+ * Provider order matters:
+ * 1. QueryClientProvider - Data fetching (outermost)
+ * 2. WizardStateProvider - Wizard state management
+ * 3. Global UI components (Toast, etc.)
  */
 const AppProviders = ({ children }: AppProvidersProps) => {
   return (
-    <>
-      {/* State providers */}
+    <QueryClientProvider>
       <WizardStateProvider>
-        {/* UI components that need to be available globally */}
+        {/* Global UI components */}
         <Toast />
         
         {/* Application content */}
         {children}
       </WizardStateProvider>
-    </>
+    </QueryClientProvider>
   );
 };
 

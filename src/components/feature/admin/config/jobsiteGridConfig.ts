@@ -5,25 +5,10 @@
  * @source Admin_Flows.md - "Manage Reference Data" section
  */
 
-import { DataGridColumn } from '../data-grid/DataGrid.client';
-import { FilterOption } from '../data-grid/FilterBar.client';
-import { Action } from '../data-grid/ActionBar.client';
-
-// Jobsite type definition based on the data model
-export interface Jobsite {
-  id: string;
-  name: string;
-  location: string;
-  status: 'active' | 'inactive' | 'completed';
-  client: string;
-  contactName?: string;
-  contactPhone?: string;
-  contactEmail?: string;
-  notes?: string;
-  lastUsed?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { DataGridColumn } from '../data-grid/data-grid.client';
+import { FilterOption } from '../data-grid/filter-bar.client';
+import { Action } from '../data-grid/action-bar.client';
+import { Jobsite } from './types';
 
 // Column definitions for the jobsite data grid
 export const jobsiteColumns: DataGridColumn<Jobsite>[] = [

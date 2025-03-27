@@ -1,5 +1,5 @@
 /**
- * Checkbox Field Component
+ * checkbox-field.client.tsx
  * 
  * A reusable checkbox input field with validation and error handling.
  * 
@@ -41,6 +41,7 @@ export function CheckboxField({
   
   return (
     <div className={cn("space-y-2", className)}>
+      {/* Checkbox with label */}
       <div className="flex items-center space-x-2">
         <Checkbox
           id={fieldId}
@@ -67,6 +68,7 @@ export function CheckboxField({
         </Label>
       </div>
       
+      {/* Error message */}
       {error && (
         <p 
           id={errorId}
@@ -76,6 +78,7 @@ export function CheckboxField({
         </p>
       )}
       
+      {/* Hint text */}
       {hint && !error && (
         <p 
           id={hintId}

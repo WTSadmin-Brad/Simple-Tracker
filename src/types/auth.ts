@@ -12,10 +12,13 @@ export type UserRole = 'employee' | 'admin';
 
 /**
  * Authentication request payload
+ * 
+ * Note: The API uses 'username' field for consistency, but it represents an email address
  */
 export interface LoginRequest {
-  username: string;
+  username: string; // This is actually an email
   password: string;
+  rememberMe?: boolean;
 }
 
 /**
@@ -32,7 +35,7 @@ export interface AuthResponse {
  */
 export interface UserData {
   id: string;
-  username: string;
+  username: string; // This is actually an email
   displayName: string;
   role: UserRole;
   lastLogin: string;

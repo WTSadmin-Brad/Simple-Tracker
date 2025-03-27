@@ -26,7 +26,7 @@ interface DevicePerformance {
  * Hook to detect device performance capabilities
  * Used to adjust animations and image quality based on device capabilities
  * 
- * TODO: Implement actual performance detection
+ * @returns {DevicePerformance} Performance metrics for the current device
  */
 export function useDevicePerformance(): DevicePerformance {
   const [performance, setPerformance] = useState<DevicePerformance>({
@@ -48,11 +48,19 @@ export function useDevicePerformance(): DevicePerformance {
           navigator.userAgent
         );
         
+        // Check for connection type if available
+        const connection = (navigator as any).connection || 
+                          (navigator as any).mozConnection || 
+                          (navigator as any).webkitConnection;
+        const slowConnection = connection && 
+                              (connection.effectiveType === '2g' || 
+                               connection.effectiveType === 'slow-2g');
+        
         // Determine performance level
         let level: PerformanceLevel = 'medium';
-        if (memory <= 2 || (isMobile && memory <= 4)) {
+        if ((memory <= 2 || slowConnection) || (isMobile && memory <= 4)) {
           level = 'low';
-        } else if (memory >= 8 && !isMobile) {
+        } else if (memory >= 8 && !isMobile && !slowConnection) {
           level = 'high';
         }
         
@@ -70,6 +78,18 @@ export function useDevicePerformance(): DevicePerformance {
     };
     
     detectPerformance();
+    
+    // Listen for connection changes if available
+    const connection = (navigator as any).connection || 
+                      (navigator as any).mozConnection || 
+                      (navigator as any).webkitConnection;
+    
+    if (connection) {
+      connection.addEventListener('change', detectPerformance);
+      return () => {
+        connection.removeEventListener('change', detectPerformance);
+      };
+    }
   }, []);
 
   return performance;

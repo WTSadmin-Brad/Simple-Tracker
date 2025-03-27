@@ -10,7 +10,7 @@
 import { Metadata } from 'next';
 import { Suspense } from 'react';
 import AdminHeader from '../_components/admin-header';
-import DataGrid from '@/components/feature/admin/data-grid/data-grid.client';
+import { DataGrid } from '@/components/feature/admin/data-grid';
 import { 
   truckColumns,
   defaultTruckQueryParams,

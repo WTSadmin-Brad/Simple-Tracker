@@ -1,479 +1,378 @@
 /**
- * DataGrid.client.tsx
+ * data-grid.client.tsx
  * Reusable data grid component for admin data management
  * 
  * @source Admin_Flows.md - "Data Management" section
  */
 
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-
-// Column definition type
-export interface DataGridColumn<T = any> {
-  key: string;
-  header: string;
-  width?: string;
-  sortable?: boolean;
-  filterable?: boolean;
-  renderCell?: (item: T) => React.ReactNode;
-}
-
-// Data grid props
-export interface DataGridProps<T = any> {
-  columns: DataGridColumn<T>[];
-  data: T[];
-  keyField: keyof T;
-  isLoading?: boolean;
-  error?: string | null;
-  onRowClick?: (item: T) => void;
-  onSort?: (key: string, direction: 'asc' | 'desc') => void;
-  onFilter?: (filters: Record<string, any>) => void;
-  onRefresh?: () => void;
-  onPageChange?: (page: number) => void;
-  pageSize?: number;
-  currentPage?: number;
-  totalItems?: number;
-  selectable?: boolean;
-  onSelectionChange?: (selectedItems: T[]) => void;
-  actionButtons?: React.ReactNode;
-}
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { 
+  DataGridHeader, 
+  DataGridRow, 
+  DataGridPagination,
+  DataGridEmptyState,
+  DataGridLoadingState,
+  DataGridErrorState
+} from './components';
+import { useDataGrid } from './hooks';
+import { DataGridProps, DataGridField, SortDirection } from './types';
+import { cn } from '@/lib/utils';
 
 /**
  * Reusable data grid component for admin data management
- * 
- * TODO: Implement the following features:
- * - Pagination controls
- * - Sorting by column
- * - Filtering by column
- * - Row selection
- * - Responsive design
- * - Loading and error states
- * - Empty state
  */
-export function DataGrid<T = any>({
+export default function DataGrid<T = any>({
   columns,
   data,
   keyField,
+  onRowClick,
+  onSelectionChange,
   isLoading = false,
   error = null,
-  onRowClick,
-  onSort,
-  onFilter,
-  onRefresh,
-  onPageChange,
-  pageSize = 10,
-  currentPage = 1,
-  totalItems = 0,
+  emptyMessage = "No items found",
+  pagination,
+  className,
   selectable = false,
-  onSelectionChange,
-  actionButtons
+  initialSelectedRows = []
 }: DataGridProps<T>) {
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [selectedRows, setSelectedRows] = useState<Set<any>>(new Set());
-  const [filters, setFilters] = useState<Record<string, any>>({});
+  // Use the data grid hook for state management
+  const {
+    sortKey,
+    sortDirection,
+    handleSort,
+    handleRowClick,
+    selectedRows,
+    handleRowSelection,
+    handleSelectAll,
+    isAllSelected,
+    isPartiallySelected
+  } = useDataGrid<T>({
+    data,
+    keyField,
+    onRowClick,
+    onSelectionChange,
+    selectable,
+    initialSelectedRows
+  });
   
-  // Calculate total pages
-  const totalPages = Math.ceil(totalItems / pageSize);
-  
-  // Handle sort
-  const handleSort = (key: string) => {
-    if (!onSort) return;
+  // Memoize sorted data for better performance
+  const sortedData = useMemo(() => {
+    if (!sortKey) return data;
     
-    const newDirection = sortKey === key && sortDirection === 'asc' ? 'desc' : 'asc';
-    setSortKey(key);
-    setSortDirection(newDirection);
-    onSort(key, newDirection);
-  };
-  
-  // Handle row selection
-  const handleRowSelect = (item: T, isSelected: boolean) => {
-    const key = item[keyField as keyof T];
-    const newSelectedRows = new Set(selectedRows);
-    
-    if (isSelected) {
-      newSelectedRows.add(key);
-    } else {
-      newSelectedRows.delete(key);
-    }
-    
-    setSelectedRows(newSelectedRows);
-    
-    if (onSelectionChange) {
-      const selectedItems = data.filter(row => 
-        newSelectedRows.has(row[keyField as keyof T])
-      );
-      onSelectionChange(selectedItems);
-    }
-  };
-  
-  // Handle "select all" checkbox
-  const handleSelectAll = (isSelected: boolean) => {
-    const newSelectedRows = new Set<any>();
-    
-    if (isSelected) {
-      data.forEach(item => {
-        newSelectedRows.add(item[keyField as keyof T]);
-      });
-    }
-    
-    setSelectedRows(newSelectedRows);
-    
-    if (onSelectionChange) {
-      const selectedItems = isSelected ? [...data] : [];
-      onSelectionChange(selectedItems);
-    }
-  };
-  
-  // Handle filter change
-  const handleFilterChange = (key: string, value: any) => {
-    const newFilters = {
-      ...filters,
-      [key]: value
-    };
-    
-    // Remove empty filters
-    if (value === '' || value === null || value === undefined) {
-      delete newFilters[key];
-    }
-    
-    setFilters(newFilters);
-    
-    if (onFilter) {
-      onFilter(newFilters);
-    }
-  };
-  
-  // Handle page change
-  const handlePageChange = (page: number) => {
-    if (page < 1 || page > totalPages || page === currentPage) return;
-    
-    if (onPageChange) {
-      onPageChange(page);
-    }
-  };
-  
+    return [...data].sort((a, b) => {
+      const aValue = typeof sortKey === 'function' ? sortKey(a) : a[sortKey as keyof T];
+      const bValue = typeof sortKey === 'function' ? sortKey(b) : b[sortKey as keyof T];
+      
+      if (aValue === bValue) return 0;
+      
+      const compareResult = aValue < bValue ? -1 : 1;
+      return sortDirection === 'asc' ? compareResult : -compareResult;
+    });
+  }, [data, sortKey, sortDirection]);
+
+  // Memoize the table header for better performance
+  const tableHeader = useMemo(() => (
+    <thead className="bg-gray-50 dark:bg-gray-700">
+      <tr>
+        {selectable && (
+          <th scope="col" className="relative px-3 py-3.5 w-12">
+            <input
+              type="checkbox"
+              className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              checked={isAllSelected}
+              ref={(input) => {
+                if (input) {
+                  input.indeterminate = isPartiallySelected;
+                }
+              }}
+              onChange={handleSelectAll}
+            />
+          </th>
+        )}
+        {columns.map((column, index) => (
+          <th 
+            key={index}
+            scope="col" 
+            className={cn(
+              "px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100",
+              column.className
+            )}
+            style={{ width: column.width }}
+          >
+            {column.sortable ? (
+              <button
+                type="button"
+                className="group inline-flex items-center"
+                onClick={() => handleSort(column.key as string)}
+              >
+                {column.label}
+                <span className="ml-2 flex-none rounded text-gray-400 group-hover:visible group-focus:visible">
+                  {sortKey === column.key ? (
+                    sortDirection === 'asc' ? (
+                      <span className="text-gray-900 dark:text-gray-100">↑</span>
+                    ) : (
+                      <span className="text-gray-900 dark:text-gray-100">↓</span>
+                    )
+                  ) : (
+                    <span className="invisible text-gray-400 group-hover:visible group-focus:visible">↓</span>
+                  )}
+                </span>
+              </button>
+            ) : (
+              column.label
+            )}
+          </th>
+        ))}
+      </tr>
+    </thead>
+  ), [columns, sortKey, sortDirection, handleSort, selectable, isAllSelected, isPartiallySelected, handleSelectAll]);
+
   // Render loading state
-  const renderLoading = () => {
-    return (
-      <tr>
-        <td 
-          colSpan={selectable ? columns.length + 1 : columns.length}
-          className="px-6 py-12 text-center"
-        >
-          <div className="flex justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
-          </div>
-          <div className="mt-2 text-gray-500">Loading data...</div>
-        </td>
-      </tr>
-    );
-  };
-  
+  const renderLoadingState = useCallback(() => (
+    <tr>
+      <td colSpan={selectable ? columns.length + 1 : columns.length} className="py-10 text-center">
+        <div className="flex justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
+        </div>
+        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading data...</div>
+      </td>
+    </tr>
+  ), [columns.length, selectable]);
+
   // Render error state
-  const renderError = () => {
-    return (
-      <tr>
-        <td 
-          colSpan={selectable ? columns.length + 1 : columns.length}
-          className="px-6 py-12 text-center"
+  const renderErrorState = useCallback(() => (
+    <tr>
+      <td colSpan={selectable ? columns.length + 1 : columns.length} className="py-10 text-center">
+        <div className="text-red-500 dark:text-red-400 mb-2">{error}</div>
+        <button 
+          type="button"
+          onClick={() => window.location.reload()}
+          className="text-sm text-primary hover:text-primary-dark"
         >
-          <div className="text-red-500 mb-2">{error}</div>
-          {onRefresh && (
-            <button
-              onClick={onRefresh}
-              className="px-4 py-2 bg-primary-500 text-white rounded-md"
-            >
-              Retry
-            </button>
-          )}
-        </td>
-      </tr>
-    );
-  };
-  
+          Try again
+        </button>
+      </td>
+    </tr>
+  ), [columns.length, error, selectable]);
+
   // Render empty state
-  const renderEmpty = () => {
-    return (
-      <tr>
-        <td 
-          colSpan={selectable ? columns.length + 1 : columns.length}
-          className="px-6 py-12 text-center"
-        >
-          <div className="text-gray-500 mb-2">No data available</div>
-          {onRefresh && (
-            <button
-              onClick={onRefresh}
-              className="px-4 py-2 border border-gray-300 rounded-md"
-            >
-              Refresh
-            </button>
+  const renderEmptyState = useCallback(() => (
+    <tr>
+      <td colSpan={selectable ? columns.length + 1 : columns.length} className="py-10 text-center">
+        <div className="text-sm text-gray-500 dark:text-gray-400">{emptyMessage}</div>
+      </td>
+    </tr>
+  ), [columns.length, emptyMessage, selectable]);
+
+  // Render data rows
+  const renderDataRows = useCallback(() => (
+    sortedData.map((item, rowIndex) => {
+      const rowKey = String(item[keyField as keyof T]) || `row-${rowIndex}`;
+      const isSelected = selectedRows.includes(rowKey);
+      
+      return (
+        <tr 
+          key={rowKey}
+          className={cn(
+            "hover:bg-gray-50 dark:hover:bg-gray-700",
+            isSelected && "bg-blue-50 dark:bg-blue-900/20",
+            onRowClick && "cursor-pointer"
           )}
-        </td>
-      </tr>
-    );
-  };
-  
-  // Render pagination
-  const renderPagination = () => {
-    if (totalPages <= 1) return null;
-    
-    const pageNumbers = [];
-    const maxPageButtons = 5;
-    
-    let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
-    let endPage = Math.min(totalPages, startPage + maxPageButtons - 1);
-    
-    if (endPage - startPage + 1 < maxPageButtons) {
-      startPage = Math.max(1, endPage - maxPageButtons + 1);
-    }
-    
-    for (let i = startPage; i <= endPage; i++) {
-      pageNumbers.push(i);
-    }
+          onClick={onRowClick ? () => handleRowClick(item) : undefined}
+        >
+          {selectable && (
+            <td className="relative w-12 px-3 py-4">
+              <input
+                type="checkbox"
+                className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                checked={isSelected}
+                onChange={(e) => handleRowSelection(rowKey, e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </td>
+          )}
+          {columns.map((column, colIndex) => {
+            // Get the value using the key or function
+            let content: React.ReactNode;
+            
+            if (typeof column.key === 'function') {
+              content = column.key(item);
+            } else {
+              const value = item[column.key as keyof T];
+              content = column.format ? column.format(value, item) : value;
+            }
+            
+            return (
+              <td 
+                key={colIndex} 
+                className={cn(
+                  "whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400",
+                  column.className
+                )}
+              >
+                {content}
+              </td>
+            );
+          })}
+        </tr>
+      );
+    })
+  ), [sortedData, columns, keyField, onRowClick, handleRowClick, selectable, selectedRows, handleRowSelection]);
+
+  // Memoize pagination component
+  const paginationComponent = useMemo(() => {
+    if (!pagination || pagination.totalPages <= 1) return null;
     
     return (
-      <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex-1 flex justify-between sm:hidden">
+      <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 sm:px-6">
+        <div className="flex flex-1 justify-between sm:hidden">
           <button
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
-            className={`relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md ${
-              currentPage === 1
-                ? 'text-gray-400 bg-gray-100 dark:text-gray-500 dark:bg-gray-700'
-                : 'text-gray-700 bg-white hover:bg-gray-50 dark:text-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'
-            }`}
+            type="button"
+            onClick={() => pagination.onPageChange(pagination.currentPage - 1)}
+            disabled={pagination.currentPage <= 1}
+            className={cn(
+              "relative inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200",
+              pagination.currentPage <= 1 ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-gray-600"
+            )}
           >
             Previous
           </button>
           <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
-            className={`ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md ${
-              currentPage === totalPages
-                ? 'text-gray-400 bg-gray-100 dark:text-gray-500 dark:bg-gray-700'
-                : 'text-gray-700 bg-white hover:bg-gray-50 dark:text-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'
-            }`}
+            type="button"
+            onClick={() => pagination.onPageChange(pagination.currentPage + 1)}
+            disabled={pagination.currentPage >= pagination.totalPages}
+            className={cn(
+              "relative ml-3 inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200",
+              pagination.currentPage >= pagination.totalPages ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-gray-600"
+            )}
           >
             Next
           </button>
         </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+        <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
           <div>
             <p className="text-sm text-gray-700 dark:text-gray-300">
-              Showing <span className="font-medium">{Math.min((currentPage - 1) * pageSize + 1, totalItems)}</span> to{' '}
-              <span className="font-medium">{Math.min(currentPage * pageSize, totalItems)}</span> of{' '}
-              <span className="font-medium">{totalItems}</span> results
+              Showing page <span className="font-medium">{pagination.currentPage}</span> of{' '}
+              <span className="font-medium">{pagination.totalPages}</span>
             </p>
           </div>
           <div>
-            <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+            <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
               <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 text-sm font-medium ${
-                  currentPage === 1
-                    ? 'text-gray-400 bg-gray-100 dark:text-gray-500 dark:bg-gray-700'
-                    : 'text-gray-500 bg-white hover:bg-gray-50 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700'
-                }`}
+                type="button"
+                onClick={() => pagination.onPageChange(1)}
+                disabled={pagination.currentPage <= 1}
+                className={cn(
+                  "relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 dark:text-gray-500 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:z-20 focus:outline-offset-0",
+                  pagination.currentPage <= 1 ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                )}
+              >
+                <span className="sr-only">First</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M15.79 14.77a.75.75 0 01-1.06.02l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 111.04 1.08L11.832 10l3.938 3.71a.75.75 0 01.02 1.06zm-6 0a.75.75 0 01-1.06.02l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 111.04 1.08L5.832 10l3.938 3.71a.75.75 0 01.02 1.06z" clipRule="evenodd" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => pagination.onPageChange(pagination.currentPage - 1)}
+                disabled={pagination.currentPage <= 1}
+                className={cn(
+                  "relative inline-flex items-center px-2 py-2 text-gray-400 dark:text-gray-500 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:z-20 focus:outline-offset-0",
+                  pagination.currentPage <= 1 ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                )}
               >
                 <span className="sr-only">Previous</span>
-                ←
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                </svg>
               </button>
               
-              {startPage > 1 && (
-                <>
+              {/* Page numbers */}
+              {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                let pageNumber: number;
+                
+                if (pagination.totalPages <= 5) {
+                  // Show all pages if 5 or fewer
+                  pageNumber = i + 1;
+                } else if (pagination.currentPage <= 3) {
+                  // Show first 5 pages
+                  pageNumber = i + 1;
+                } else if (pagination.currentPage >= pagination.totalPages - 2) {
+                  // Show last 5 pages
+                  pageNumber = pagination.totalPages - 4 + i;
+                } else {
+                  // Show current page and 2 pages on each side
+                  pageNumber = pagination.currentPage - 2 + i;
+                }
+                
+                return (
                   <button
-                    onClick={() => handlePageChange(1)}
-                    className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    type="button"
+                    key={pageNumber}
+                    onClick={() => pagination.onPageChange(pageNumber)}
+                    className={cn(
+                      "relative inline-flex items-center px-4 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:z-20 focus:outline-offset-0",
+                      pageNumber === pagination.currentPage
+                        ? "bg-primary text-white focus-visible:outline-primary"
+                        : "text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    )}
                   >
-                    1
+                    {pageNumber}
                   </button>
-                  {startPage > 2 && (
-                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300">
-                      ...
-                    </span>
-                  )}
-                </>
-              )}
-              
-              {pageNumbers.map(page => (
-                <button
-                  key={page}
-                  onClick={() => handlePageChange(page)}
-                  className={`relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium ${
-                    page === currentPage
-                      ? 'z-10 bg-primary-50 border-primary-500 text-primary-600 dark:bg-primary-900 dark:border-primary-500 dark:text-primary-300'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
-              
-              {endPage < totalPages && (
-                <>
-                  {endPage < totalPages - 1 && (
-                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300">
-                      ...
-                    </span>
-                  )}
-                  <button
-                    onClick={() => handlePageChange(totalPages)}
-                    className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    {totalPages}
-                  </button>
-                </>
-              )}
+                );
+              })}
               
               <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 text-sm font-medium ${
-                  currentPage === totalPages
-                    ? 'text-gray-400 bg-gray-100 dark:text-gray-500 dark:bg-gray-700'
-                    : 'text-gray-500 bg-white hover:bg-gray-50 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700'
-                }`}
+                type="button"
+                onClick={() => pagination.onPageChange(pagination.currentPage + 1)}
+                disabled={pagination.currentPage >= pagination.totalPages}
+                className={cn(
+                  "relative inline-flex items-center px-2 py-2 text-gray-400 dark:text-gray-500 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:z-20 focus:outline-offset-0",
+                  pagination.currentPage >= pagination.totalPages ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                )}
               >
                 <span className="sr-only">Next</span>
-                →
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => pagination.onPageChange(pagination.totalPages)}
+                disabled={pagination.currentPage >= pagination.totalPages}
+                className={cn(
+                  "relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 dark:text-gray-500 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:z-20 focus:outline-offset-0",
+                  pagination.currentPage >= pagination.totalPages ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                )}
+              >
+                <span className="sr-only">Last</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M4.21 14.77a.75.75 0 01.02-1.06L8.168 10 4.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02zm6 0a.75.75 0 01.02-1.06L14.168 10 10.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                </svg>
               </button>
             </nav>
           </div>
         </div>
       </div>
     );
-  };
-  
+  }, [pagination]);
+
   return (
-    <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
-      {/* Action buttons */}
-      {actionButtons && (
-        <div className="bg-white dark:bg-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          {actionButtons}
-        </div>
-      )}
-      
-      {/* Table */}
+    <div className={cn("overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg", className)}>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-800">
-            <tr>
-              {/* Selection checkbox */}
-              {selectable && (
-                <th scope="col" className="relative w-12 px-6 py-3">
-                  <input
-                    type="checkbox"
-                    className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    checked={selectedRows.size === data.length && data.length > 0}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    disabled={data.length === 0}
-                  />
-                </th>
-              )}
-              
-              {/* Column headers */}
-              {columns.map((column) => (
-                <th
-                  key={column.key}
-                  scope="col"
-                  className={`px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
-                    column.sortable ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700' : ''
-                  }`}
-                  style={{ width: column.width }}
-                  onClick={() => column.sortable && handleSort(column.key)}
-                >
-                  <div className="flex items-center">
-                    <span>{column.header}</span>
-                    {column.sortable && sortKey === column.key && (
-                      <span className="ml-1">
-                        {sortDirection === 'asc' ? '↑' : '↓'}
-                      </span>
-                    )}
-                  </div>
-                  
-                  {/* Column filter */}
-                  {column.filterable && (
-                    <div className="mt-1">
-                      <input
-                        type="text"
-                        className="block w-full text-xs border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-300"
-                        placeholder={`Filter ${column.header}`}
-                        value={filters[column.key] || ''}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => handleFilterChange(column.key, e.target.value)}
-                      />
-                    </div>
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
-            {isLoading ? (
-              renderLoading()
-            ) : error ? (
-              renderError()
-            ) : data.length === 0 ? (
-              renderEmpty()
-            ) : (
-              data.map((item, index) => {
-                const key = item[keyField as keyof T];
-                const isSelected = selectedRows.has(key);
-                
-                return (
-                  <motion.tr
-                    key={String(key)}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05, duration: 0.2 }}
-                    className={`${
-                      onRowClick ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800' : ''
-                    } ${isSelected ? 'bg-primary-50 dark:bg-primary-900' : ''}`}
-                    onClick={() => onRowClick && onRowClick(item)}
-                  >
-                    {/* Selection checkbox */}
-                    {selectable && (
-                      <td className="relative w-12 px-6 py-4">
-                        <input
-                          type="checkbox"
-                          className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                          checked={isSelected}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            handleRowSelect(item, e.target.checked);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </td>
-                    )}
-                    
-                    {/* Data cells */}
-                    {columns.map((column) => (
-                      <td
-                        key={`${String(key)}-${column.key}`}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200"
-                      >
-                        {column.renderCell
-                          ? column.renderCell(item)
-                          : (item as any)[column.key] !== undefined
-                            ? String((item as any)[column.key])
-                            : '-'}
-                      </td>
-                    ))}
-                  </motion.tr>
-                );
-              })
-            )}
+        <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
+          {tableHeader}
+          
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+            {isLoading && renderLoadingState()}
+            {!isLoading && error && renderErrorState()}
+            {!isLoading && !error && sortedData.length === 0 && renderEmptyState()}
+            {!isLoading && !error && sortedData.length > 0 && renderDataRows()}
           </tbody>
         </table>
       </div>
       
-      {/* Pagination */}
-      {renderPagination()}
+      {paginationComponent}
     </div>
   );
 }
-
-export default DataGrid;

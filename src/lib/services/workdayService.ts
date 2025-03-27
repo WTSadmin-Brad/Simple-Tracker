@@ -10,7 +10,7 @@
  */
 
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { collection, query, where, orderBy, getDocs, doc, getDoc, setDoc, updateDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { getFirestoreClient } from '@/lib/firebase/client';
 import { WorkdayType, WorkdayWithTickets } from '@/types/workday';
@@ -363,7 +363,166 @@ const workdayService = {
   fetchWorkdaysForMonth,
   createWorkday,
   updateWorkday,
-  updateWorkdayTicketSummary
+  updateWorkdayTicketSummary,
+  
+  // Get workdays with filtering (used in the main GET endpoint)
+  getWorkdays: async function(filters: { 
+    startDate?: string; 
+    endDate?: string; 
+    jobsite?: string; 
+    workType?: string; 
+    userId: string;
+    page?: number;
+    limit?: number;
+    sortField?: string;
+    sortDirection?: 'asc' | 'desc';
+  }) {
+    try {
+      const db = getFirestoreClient();
+      
+      if (!db) {
+        console.warn('Firestore not available, using mock data');
+        // Return mock data for development
+        return generateMockWorkdays(new Date().getFullYear(), new Date().getMonth() + 1);
+      }
+      
+      // Build query based on filters
+      const workdaysRef = collection(db, WORKDAYS_COLLECTION);
+      let q = query(workdaysRef, where('userId', '==', filters.userId));
+      
+      // Add date filters if provided
+      if (filters.startDate) {
+        q = query(q, where('date', '>=', filters.startDate));
+      }
+      
+      if (filters.endDate) {
+        q = query(q, where('date', '<=', filters.endDate));
+      }
+      
+      // Add jobsite filter if provided
+      if (filters.jobsite) {
+        q = query(q, where('jobsite', '==', filters.jobsite));
+      }
+      
+      // Add workType filter if provided
+      if (filters.workType) {
+        q = query(q, where('workType', '==', filters.workType));
+      }
+      
+      // Add sorting
+      const sortField = filters.sortField || 'date';
+      const sortDirection = filters.sortDirection || 'desc';
+      q = query(q, orderBy(sortField, sortDirection));
+      
+      // Execute query
+      const querySnapshot = await getDocs(q);
+      
+      // Convert Firestore documents to WorkdayWithTickets objects
+      const workdays: WorkdayWithTickets[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        workdays.push({
+          id: doc.id,
+          date: data.date,
+          jobsite: data.jobsite,
+          jobsiteName: data.jobsiteName,
+          workType: data.workType,
+          userId: data.userId,
+          editableUntil: data.editableUntil,
+          createdAt: data.createdAt?.toDate?.() 
+            ? data.createdAt.toDate().toISOString() 
+            : new Date().toISOString(),
+          updatedAt: data.updatedAt?.toDate?.() 
+            ? data.updatedAt.toDate().toISOString() 
+            : new Date().toISOString(),
+          ticketSummary: data.ticketSummary
+        });
+      });
+      
+      return workdays;
+    } catch (error) {
+      console.error('Error fetching workdays:', error);
+      throw new Error('Failed to fetch workdays');
+    }
+  },
+  
+  // Get workday by ID (used in [id] route handlers)
+  getWorkdayById: async function(id: string, userId: string) {
+    try {
+      const db = getFirestoreClient();
+      
+      if (!db) {
+        console.warn('Firestore not available, using mock data');
+        // Return mock data for development
+        return {
+          id,
+          date: '2025-03-22',
+          jobsite: 'mock-jobsite',
+          jobsiteName: 'Mock Jobsite',
+          workType: 'full-day',
+          userId,
+          editableUntil: '2025-03-29',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ticketSummary: null
+        };
+      }
+      
+      // Get the workday document
+      const workdayRef = doc(db, WORKDAYS_COLLECTION, id);
+      const workdaySnap = await getDoc(workdayRef);
+      
+      if (!workdaySnap.exists()) {
+        return null;
+      }
+      
+      // Verify the workday belongs to the user
+      const data = workdaySnap.data();
+      if (data.userId !== userId) {
+        return null;
+      }
+      
+      // Return the workday
+      return {
+        id: workdaySnap.id,
+        date: data.date,
+        jobsite: data.jobsite,
+        jobsiteName: data.jobsiteName,
+        workType: data.workType,
+        userId: data.userId,
+        editableUntil: data.editableUntil,
+        createdAt: data.createdAt?.toDate?.() 
+          ? data.createdAt.toDate().toISOString() 
+          : new Date().toISOString(),
+        updatedAt: data.updatedAt?.toDate?.() 
+          ? data.updatedAt.toDate().toISOString() 
+          : new Date().toISOString(),
+        ticketSummary: data.ticketSummary
+      };
+    } catch (error) {
+      console.error('Error fetching workday by ID:', error);
+      throw new Error(`Failed to fetch workday with ID: ${id}`);
+    }
+  },
+  
+  // Delete workday (used in [id] DELETE handler)
+  deleteWorkday: async function(id: string) {
+    try {
+      const db = getFirestoreClient();
+      
+      if (!db) {
+        console.warn('Firestore not available, mock delete');
+        return;
+      }
+      
+      // Delete the workday document
+      const workdayRef = doc(db, WORKDAYS_COLLECTION, id);
+      await deleteDoc(workdayRef);
+    } catch (error) {
+      console.error('Error deleting workday:', error);
+      throw new Error(`Failed to delete workday with ID: ${id}`);
+    }
+  }
 };
 
 export default workdayService;

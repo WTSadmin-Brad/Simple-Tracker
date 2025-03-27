@@ -5,25 +5,11 @@
  * @source Admin_Flows.md - "Filter & View Workdays" section
  */
 
-import { DataGridColumn } from '../data-grid/DataGrid.client';
-import { FilterOption } from '../data-grid/FilterBar.client';
-import { Action } from '../data-grid/ActionBar.client';
+import { DataGridColumn } from '../data-grid/data-grid.client';
+import { FilterOption } from '../data-grid/filter-bar.client';
+import { Action } from '../data-grid/action-bar.client';
+import { Workday } from './types';
 import { format } from 'date-fns';
-
-// Workday type definition based on the data model
-export interface Workday {
-  id: string;
-  userId: string;
-  employeeName?: string; // For display purposes
-  date: Date;
-  jobsite: string;
-  jobsiteName?: string; // For display purposes
-  workType: 'regular' | 'overtime' | 'holiday' | 'sick' | 'vacation';
-  hours: number;
-  notes?: string;
-  status: 'active' | 'archived';
-  isPrediction?: boolean;
-}
 
 // Column definitions for the workday data grid
 export const workdayColumns: DataGridColumn<Workday>[] = [

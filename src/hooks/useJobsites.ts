@@ -8,9 +8,11 @@
  * @source Employee_Flows.md - "Workday Logging Flow" section
  */
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { errorHandler, ErrorCodes } from '@/lib/errors';
 import { useToast } from '@/components/ui/use-toast';
+import { STALE_TIMES, createQueryOptions } from '@/lib/query/queryUtils';
 
 /**
  * Jobsite data structure
@@ -39,48 +41,46 @@ export interface JobsiteFilters {
   searchQuery?: string;
 }
 
-// Cache expiry time in milliseconds (5 minutes)
-const CACHE_EXPIRY = 5 * 60 * 1000;
+/**
+ * Query keys for jobsite queries
+ */
+export const jobsiteKeys = {
+  all: ['jobsites'] as const,
+  lists: () => [...jobsiteKeys.all, 'list'] as const,
+  list: (filters: JobsiteFilters = {}) => [...jobsiteKeys.lists(), filters] as const,
+  details: () => [...jobsiteKeys.all, 'detail'] as const,
+  detail: (id: string) => [...jobsiteKeys.details(), id] as const,
+};
 
 /**
  * Hook for managing jobsite reference data
+ * 
+ * @returns Jobsite operations and data
  */
 export function useJobsites() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [jobsites, setJobsites] = useState<Jobsite[]>([]);
-  const [lastFetched, setLastFetched] = useState<number | null>(null);
   const { toast } = useToast();
 
   /**
-   * Fetch all jobsites with optional filters
+   * Fetch jobsites from the API
+   * 
+   * @param filters Optional filters to apply
+   * @returns Promise resolving to jobsites array
    */
-  const fetchJobsites = useCallback(async (filters?: JobsiteFilters, forceRefresh = false) => {
-    // Return cached data if available and not expired
-    if (!forceRefresh && lastFetched && Date.now() - lastFetched < CACHE_EXPIRY) {
-      if (filters) {
-        return filterJobsites(jobsites, filters);
-      }
-      return jobsites;
+  const fetchJobsitesFromApi = useCallback(async (filters?: JobsiteFilters): Promise<Jobsite[]> => {
+    const queryParams = new URLSearchParams();
+    
+    if (filters?.includeInactive) {
+      queryParams.append('includeInactive', 'true');
     }
-
-    setIsLoading(true);
-    setError(null);
+    
+    if (filters?.searchQuery) {
+      queryParams.append('search', filters.searchQuery);
+    }
+    
+    const queryString = queryParams.toString();
+    const url = `/api/jobsites${queryString ? `?${queryString}` : ''}`;
     
     try {
-      const queryParams = new URLSearchParams();
-      
-      if (filters?.includeInactive) {
-        queryParams.append('includeInactive', 'true');
-      }
-      
-      if (filters?.searchQuery) {
-        queryParams.append('search', filters.searchQuery);
-      }
-      
-      const queryString = queryParams.toString();
-      const url = `/api/jobsites${queryString ? `?${queryString}` : ''}`;
-      
       const response = await errorHandler.withRetry(async () => {
         const result = await fetch(url, {
           method: 'GET',
@@ -104,87 +104,35 @@ export function useJobsites() {
         retryDelay: 1000,
       });
       
-      const fetchedJobsites = response.jobsites as Jobsite[];
-      
-      // Update state
-      setJobsites(fetchedJobsites);
-      setLastFetched(Date.now());
-      
-      // Return possibly filtered results
-      if (filters?.searchQuery && !queryParams.has('search')) {
-        // If we didn't use server-side search, filter locally
-        return filterJobsites(fetchedJobsites, { searchQuery: filters.searchQuery });
-      }
-      
-      return fetchedJobsites;
+      return response.jobsites as Jobsite[];
     } catch (err) {
-      const formattedError = errorHandler.formatError(err);
-      const userMessage = errorHandler.getUserFriendlyMessage(err);
-      
-      setError(userMessage);
-      
-      // Show toast notification for unexpected errors
-      if (formattedError.status !== 404) {
-        toast({
-          title: "Failed to load jobsites",
-          description: userMessage,
-          variant: "destructive",
-        });
-      }
-      
+      // Log the error
       errorHandler.logError(err, { 
         operation: 'fetchJobsites',
         filters 
       });
       
-      // If we have cached data, return it as a fallback
-      if (jobsites.length > 0) {
-        return filters ? filterJobsites(jobsites, filters) : jobsites;
-      }
-      
-      // If no cached data, return mock data for development
+      // If in development, return mock data
       if (process.env.NODE_ENV !== 'production') {
-        const mockJobsites: Jobsite[] = [
+        return [
           { id: 'site-1', name: 'Downtown Project', isActive: true, city: 'Austin', state: 'TX' },
           { id: 'site-2', name: 'Highway Extension', isActive: true, city: 'Dallas', state: 'TX' },
           { id: 'site-3', name: 'North Bridge', isActive: true, city: 'San Antonio', state: 'TX' },
           { id: 'site-4', name: 'Old Factory Renovation', isActive: false, city: 'Houston', state: 'TX' }
         ];
-        
-        return filters ? filterJobsites(mockJobsites, filters) : mockJobsites;
       }
       
-      return [];
-    } finally {
-      setIsLoading(false);
+      throw err;
     }
-  }, [jobsites, lastFetched, toast]);
+  }, []);
 
   /**
-   * Search jobsites by name (client-side filtering)
+   * Fetch a single jobsite by ID from the API
+   * 
+   * @param id Jobsite ID
+   * @returns Promise resolving to jobsite or null if not found
    */
-  const searchJobsites = useCallback((query: string) => {
-    if (!query) return jobsites;
-    
-    return filterJobsites(jobsites, { searchQuery: query });
-  }, [jobsites]);
-
-  /**
-   * Get a jobsite by ID
-   */
-  const getJobsiteById = useCallback(async (id: string) => {
-    // Check if we already have it in our local state
-    const cachedJobsite = jobsites.find(jobsite => jobsite.id === id);
-    
-    // If we have it and it's not stale, return it
-    if (cachedJobsite && lastFetched && Date.now() - lastFetched < CACHE_EXPIRY) {
-      return cachedJobsite;
-    }
-    
-    // Otherwise fetch it from the API
-    setIsLoading(true);
-    setError(null);
-    
+  const fetchJobsiteByIdFromApi = useCallback(async (id: string): Promise<Jobsite | null> => {
     try {
       const response = await errorHandler.withRetry(async () => {
         const result = await fetch(`/api/jobsites/${id}`, {
@@ -208,114 +156,123 @@ export function useJobsites() {
         }
         
         return result.json();
+      }, {
+        maxRetries: 2,
+        retryDelay: 1000,
       });
       
-      const fetchedJobsite = response.jobsite as Jobsite | null;
+      return response.jobsite as Jobsite | null;
+    } catch (err) {
+      // Log the error
+      errorHandler.logError(err, { 
+        operation: 'fetchJobsiteById',
+        jobsiteId: id 
+      });
       
-      // If we got a jobsite, update our cache with it
-      if (fetchedJobsite) {
-        // Update the specific jobsite in our local state
-        setJobsites(prev => {
-          const index = prev.findIndex(j => j.id === id);
-          if (index >= 0) {
-            // Replace the existing jobsite
-            const newJobsites = [...prev];
-            newJobsites[index] = fetchedJobsite;
-            return newJobsites;
-          } else {
-            // Add the new jobsite
-            return [...prev, fetchedJobsite];
-          }
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Query hook for fetching jobsites
+   * 
+   * @param filters Optional filters to apply
+   * @returns Query result with jobsites data
+   */
+  const useJobsiteQuery = (filters?: JobsiteFilters) => {
+    return useQuery({
+      queryKey: jobsiteKeys.list(filters),
+      queryFn: () => fetchJobsitesFromApi(filters),
+      ...createQueryOptions<Jobsite[]>(STALE_TIMES.REFERENCE_DATA),
+      onError: (err) => {
+        const userMessage = errorHandler.getUserFriendlyMessage(err);
+        toast({
+          title: "Failed to load jobsites",
+          description: userMessage,
+          variant: "destructive",
         });
       }
-      
-      return fetchedJobsite;
-    } catch (err) {
-      const formattedError = errorHandler.formatError(err);
-      const userMessage = errorHandler.getUserFriendlyMessage(err);
-      
-      setError(userMessage);
-      
-      // Only show toast for unexpected errors, not for "not found"
-      if (formattedError.status !== 404) {
+    });
+  };
+
+  /**
+   * Query hook for fetching a single jobsite by ID
+   * 
+   * @param id Jobsite ID
+   * @returns Query result with jobsite data
+   */
+  const useJobsiteByIdQuery = (id: string) => {
+    return useQuery({
+      queryKey: jobsiteKeys.detail(id),
+      queryFn: () => fetchJobsiteByIdFromApi(id),
+      ...createQueryOptions<Jobsite | null>(STALE_TIMES.REFERENCE_DATA),
+      onError: (err) => {
+        const userMessage = errorHandler.getUserFriendlyMessage(err);
         toast({
           title: "Failed to load jobsite details",
           description: userMessage,
           variant: "destructive",
         });
       }
-      
-      errorHandler.logError(err, { 
-        operation: 'getJobsiteById',
-        jobsiteId: id 
-      });
-      
-      // Return cached version if available, even if stale
-      return cachedJobsite || null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [jobsites, lastFetched, toast]);
+    });
+  };
 
   /**
-   * Initialize hook by fetching jobsites
+   * Filter jobsites based on provided filters
+   * 
+   * @param jobsites Array of jobsites to filter
+   * @param filters Filters to apply
+   * @returns Filtered jobsites array
    */
-  useEffect(() => {
-    // Only fetch if we haven't fetched before
-    if (!lastFetched) {
-      fetchJobsites();
+  const filterJobsites = (jobsites: Jobsite[], filters: JobsiteFilters): Jobsite[] => {
+    let filtered = [...jobsites];
+    
+    // Filter by active status
+    if (!filters.includeInactive) {
+      filtered = filtered.filter(jobsite => jobsite.isActive);
     }
-  }, [fetchJobsites, lastFetched]);
+    
+    // Filter by search query
+    if (filters.searchQuery) {
+      const query = filters.searchQuery.toLowerCase();
+      filtered = filtered.filter(jobsite => 
+        jobsite.name.toLowerCase().includes(query) ||
+        jobsite.city?.toLowerCase().includes(query) ||
+        jobsite.state?.toLowerCase().includes(query) ||
+        jobsite.address?.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
+  };
+
+  /**
+   * Search jobsites by name (client-side filtering)
+   * 
+   * @param jobsites Array of jobsites to search
+   * @param query Search query
+   * @returns Filtered jobsites array
+   */
+  const searchJobsites = (jobsites: Jobsite[], query: string): Jobsite[] => {
+    if (!query) return jobsites;
+    
+    return filterJobsites(jobsites, { searchQuery: query });
+  };
 
   return {
-    jobsites,
-    isLoading,
-    error,
-    fetchJobsites,
+    // Query hooks
+    useJobsiteQuery,
+    useJobsiteByIdQuery,
+    
+    // Utility functions
+    filterJobsites,
     searchJobsites,
-    getJobsiteById,
-    lastFetched,
+    
+    // Direct API functions (for imperative calls)
+    fetchJobsites: fetchJobsitesFromApi,
+    fetchJobsiteById: fetchJobsiteByIdFromApi,
+    
+    // Query keys for manual cache operations
+    jobsiteKeys,
   };
-}
-
-/**
- * Helper function to filter jobsites based on filters
- */
-function filterJobsites(jobsites: Jobsite[], filters: JobsiteFilters): Jobsite[] {
-  let filtered = [...jobsites];
-  
-  // Filter by active status
-  if (!filters.includeInactive) {
-    filtered = filtered.filter(jobsite => jobsite.isActive);
-  }
-  
-  // Filter by search query
-  if (filters.searchQuery) {
-    const lowerQuery = filters.searchQuery.toLowerCase();
-    filtered = filtered.filter(jobsite => {
-      // Search by name
-      if (jobsite.name.toLowerCase().includes(lowerQuery)) {
-        return true;
-      }
-      
-      // Search by address
-      if (jobsite.address && jobsite.address.toLowerCase().includes(lowerQuery)) {
-        return true;
-      }
-      
-      // Search by city
-      if (jobsite.city && jobsite.city.toLowerCase().includes(lowerQuery)) {
-        return true;
-      }
-      
-      // Search by contact name
-      if (jobsite.contactName && jobsite.contactName.toLowerCase().includes(lowerQuery)) {
-        return true;
-      }
-      
-      return false;
-    });
-  }
-  
-  return filtered;
 }

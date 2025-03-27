@@ -1,5 +1,5 @@
 /**
- * Counter Field Component
+ * counter-field.client.tsx
  * 
  * A specialized counter input field for ticket categories with color transitions.
  * Color transitions: Red(0) → Yellow(1-84) → Green(85-124) → Gold(125-150)
@@ -20,6 +20,16 @@ import { motion } from 'framer-motion';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { CounterColorState } from '@/types/tickets';
 import { getCounterColorState } from '@/lib/constants/ticketCategories';
+
+// Animation constants
+const ANIMATION_CONFIG = {
+  spring: {
+    type: 'spring', 
+    stiffness: 500, 
+    damping: 30
+  },
+  duration: 0.3
+};
 
 interface CounterFieldProps {
   label: string;
@@ -109,6 +119,7 @@ export function CounterField({
   
   return (
     <div className={cn("space-y-2", className)}>
+      {/* Field label */}
       <div className="flex items-center justify-between">
         <Label 
           htmlFor={fieldId}
@@ -121,7 +132,9 @@ export function CounterField({
         </Label>
       </div>
       
+      {/* Counter controls */}
       <div className="flex items-center space-x-2">
+        {/* Decrement button */}
         <Button
           type="button"
           variant="outline"
@@ -134,16 +147,16 @@ export function CounterField({
           <MinusIcon className="h-4 w-4" />
         </Button>
         
+        {/* Counter input with background */}
         <motion.div
           className="relative flex-1"
           animate={{ scale: value === 0 ? 1 : 1.05 }}
           transition={{ 
-            type: 'spring', 
-            stiffness: 500, 
-            damping: 30,
-            duration: prefersReducedMotion ? 0.1 : 0.3
+            ...ANIMATION_CONFIG.spring,
+            duration: prefersReducedMotion ? 0.1 : ANIMATION_CONFIG.duration
           }}
         >
+          {/* Input field */}
           <Input
             id={fieldId}
             type="number"
@@ -163,6 +176,7 @@ export function CounterField({
             }
           />
           
+          {/* Colored background */}
           <motion.div
             className={cn(
               "absolute inset-0 -z-10 rounded-md opacity-20",
@@ -172,14 +186,11 @@ export function CounterField({
               opacity: prefersReducedMotion ? 0.2 : 0.3,
               scale: prefersReducedMotion ? 1 : 1.05
             }}
-            transition={{ 
-              type: 'spring', 
-              stiffness: 500, 
-              damping: 30 
-            }}
+            transition={ANIMATION_CONFIG.spring}
           />
         </motion.div>
         
+        {/* Increment button */}
         <Button
           type="button"
           variant="outline"
@@ -193,6 +204,7 @@ export function CounterField({
         </Button>
       </div>
       
+      {/* Error message */}
       {error && (
         <p 
           id={errorId}
@@ -202,6 +214,7 @@ export function CounterField({
         </p>
       )}
       
+      {/* Hint text */}
       {hint && !error && (
         <p 
           id={hintId}

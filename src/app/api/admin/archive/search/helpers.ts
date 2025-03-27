@@ -3,59 +3,63 @@
  * Utilities for searching archived data
  */
 
+import { ArchiveSearchParams, ArchiveItem } from '@/lib/schemas/archiveSchemas';
+import { searchArchive } from '@/lib/services/archiveService';
+import { z } from 'zod';
+
+// Schema for pagination
+export const paginationSchema = z.object({
+  page: z.number().int().min(1).optional().default(1),
+  pageSize: z.number().int().min(1).max(100).optional().default(10)
+});
+
 // Interface for search parameters
-export interface ArchiveSearchParams {
-  type: 'tickets' | 'workdays' | 'images';
-  query?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  limit?: number;
-  offset?: number;
-}
+export type ArchiveSearchOptions = ArchiveSearchParams & z.infer<typeof paginationSchema>;
 
 // Interface for search results
 export interface ArchiveSearchResult {
-  id: string;
-  type: 'ticket' | 'workday' | 'image';
-  title: string;
-  date: string;
-  archivedAt: string;
-  metadata: Record<string, any>;
+  items: ArchiveItem[];
+  pagination: {
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
 }
 
-// Placeholder function to search archived data
-export async function searchArchive(params: ArchiveSearchParams): Promise<ArchiveSearchResult[]> {
-  // In a real implementation, this would search Firestore archives
+/**
+ * Search archived data with pagination
+ * @param params Search parameters and pagination options
+ * @returns Search results with pagination metadata
+ */
+export async function searchArchiveWithPagination(params: ArchiveSearchOptions): Promise<ArchiveSearchResult> {
+  // Calculate offset from page and pageSize
+  const page = params.page || 1;
+  const pageSize = params.pageSize || 10;
+  const offset = (page - 1) * pageSize;
   
-  // Placeholder results
-  const results: ArchiveSearchResult[] = [
-    {
-      id: 'archived-1',
-      type: 'ticket',
-      title: 'Archived Ticket 1',
-      date: '2024-12-15',
-      archivedAt: '2025-02-15',
-      metadata: {
-        jobsite: 'Downtown Project',
-        truck: 'Truck 101',
-      },
-    },
-    {
-      id: 'archived-2',
-      type: 'image',
-      title: 'site-photo.jpg',
-      date: '2024-12-20',
-      archivedAt: '2025-01-03',
-      metadata: {
-        ticketId: 'ticket-123',
-        size: 1024000,
-      },
-    },
-  ];
+  // Convert to service parameters
+  const serviceParams: ArchiveSearchParams = {
+    ...params,
+    limit: pageSize,
+    offset
+  };
   
-  return results;
+  // Call the archive service
+  const result = await searchArchive(serviceParams);
+  
+  // Calculate total pages
+  const totalPages = Math.ceil(result.total / pageSize);
+  
+  return {
+    items: result.items,
+    pagination: {
+      total: result.total,
+      page,
+      pageSize,
+      totalPages,
+      hasMore: result.hasMore
+    }
+  };
 }
-
-// TODO: Implement proper Firebase integration for archive search
-// TODO: Add pagination for large result sets
-// TODO: Implement filtering by metadata fields

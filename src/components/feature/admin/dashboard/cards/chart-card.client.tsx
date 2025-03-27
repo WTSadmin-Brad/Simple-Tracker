@@ -5,14 +5,15 @@
  * @source Admin_Flows.md - "Dashboard" section - "Chart card"
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { RefreshCcw, BarChart2, LineChart, PieChart } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import DashboardCard from '../DashboardCard.client';
-import { CardSize } from '../DashboardCard.client';
-import dashboardService, { ChartData } from '@/lib/services/dashboardService';
+import { BarChart2, LineChart, PieChart } from 'lucide-react';
+import DashboardCard from '../dashboard-card.client';
+import { CardSize } from '../dashboard-card.client';
+import dashboardService from '@/lib/services/dashboardService';
+import { useCardData } from '../hooks';
+import { CardLoadingState, CardErrorState, CardEmptyState, CardFooterWithRefresh } from '../components';
 
 // Chart libraries (will use in Chart component)
 import {
@@ -73,78 +74,26 @@ const ChartCard = ({
   onResize
 }: ChartCardProps) => {
   const prefersReducedMotion = useReducedMotion();
-  const [chartData, setChartData] = useState<ChartData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const chartRef = useRef<ChartJS>(null);
   
-  // Fetch chart data
+  // Create fetch function for the hook
   const fetchChartData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Use dashboard service to fetch chart data
-      const result = await dashboardService.fetchChartData(
-        chartType,
-        dataSource,
-        filters
-      );
-      
-      setChartData(result);
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError('Failed to load chart data');
-      console.error('Error fetching chart data:', err);
-    } finally {
-      setIsLoading(false);
-    }
+    // Use dashboard service to fetch chart data
+    return await dashboardService.fetchChartData(
+      chartType,
+      dataSource,
+      filters
+    );
   }, [chartType, dataSource, JSON.stringify(filters)]);
   
-  // Initial data fetch
-  useEffect(() => {
-    fetchChartData();
-  }, [fetchChartData]);
-  
-  // Set up refresh interval
-  useEffect(() => {
-    if (refreshInterval > 0) {
-      const intervalId = setInterval(fetchChartData, refreshInterval * 1000);
-      return () => clearInterval(intervalId);
-    }
-  }, [refreshInterval, fetchChartData]);
-  
-  // Format the last updated time
-  const formatLastUpdated = () => {
-    return lastUpdated.toLocaleTimeString();
-  };
-  
-  // Render loading state
-  const renderLoading = () => {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
-      </div>
-    );
-  };
-  
-  // Render error state
-  const renderError = () => {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-red-500 p-4">
-        <div className="text-2xl mb-2">⚠️</div>
-        <div className="mb-2">{error}</div>
-        <Button 
-          onClick={fetchChartData}
-          variant="outline"
-          size="sm"
-        >
-          Retry
-        </Button>
-      </div>
-    );
-  };
+  // Use the shared hook for data fetching
+  const { 
+    data: chartData, 
+    isLoading, 
+    error, 
+    lastUpdated, 
+    refreshData 
+  } = useCardData(fetchChartData, refreshInterval, [chartType, dataSource, JSON.stringify(filters)]);
   
   // Get chart options based on chart type
   const getChartOptions = () => {
@@ -204,66 +153,87 @@ const ChartCard = ({
     }
   };
   
-  // Render chart based on type
+  // Render the appropriate chart based on type
   const renderChart = () => {
-    if (!chartData) return null;
+    if (!chartData || !chartData.data) return null;
     
     const options = getChartOptions();
+    const { data } = chartData;
     
     switch (chartType) {
       case 'line':
-        return <Line ref={chartRef} data={chartData} options={options} />;
+        return (
+          <Line 
+            data={data} 
+            options={options} 
+            ref={chartRef as any}
+          />
+        );
         
       case 'bar':
-        return <Bar ref={chartRef} data={chartData} options={options} />;
+        return (
+          <Bar 
+            data={data} 
+            options={options} 
+            ref={chartRef as any}
+          />
+        );
         
       case 'pie':
-        return <Pie ref={chartRef} data={chartData} options={options} />;
+        return (
+          <Pie 
+            data={data} 
+            options={options} 
+            ref={chartRef as any}
+          />
+        );
         
       default:
         return null;
     }
   };
   
-  // Get chart icon for header
+  // Get chart icon based on type
   const getChartIcon = () => {
     switch (chartType) {
       case 'line':
         return <LineChart className="h-4 w-4" />;
-        
       case 'bar':
         return <BarChart2 className="h-4 w-4" />;
-        
       case 'pie':
         return <PieChart className="h-4 w-4" />;
-        
       default:
         return <BarChart2 className="h-4 w-4" />;
     }
   };
   
-  // Render refresh button
-  const RefreshButton = () => (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-7 w-7 rounded-full"
-      onClick={fetchChartData}
-      title="Refresh data"
-    >
-      <RefreshCcw className="h-4 w-4" />
-    </Button>
-  );
-  
-  // Header actions for the card
-  const headerActions = (
-    <>
-      <span className="text-gray-400 mr-1">
-        {getChartIcon()}
-      </span>
-      <RefreshButton />
-    </>
-  );
+  // Render chart content
+  const renderChartContent = () => {
+    if (isLoading) {
+      return <CardLoadingState />;
+    }
+    
+    if (error) {
+      return <CardErrorState error={error} onRetry={refreshData} />;
+    }
+    
+    if (!chartData || !chartData.data) {
+      return <CardEmptyState message="No chart data available" onRefresh={refreshData} />;
+    }
+    
+    return (
+      <div className="h-full p-4">
+        <motion.div 
+          className="h-full"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: prefersReducedMotion ? 0.1 : 0.5 }}
+        >
+          {renderChart()}
+        </motion.div>
+      </div>
+    );
+  };
   
   return (
     <DashboardCard
@@ -274,27 +244,15 @@ const ChartCard = ({
       onEdit={onEdit}
       onRemove={onRemove}
       onResize={onResize}
-      headerActions={headerActions}
-      className="chart-card"
+      headerActions={getChartIcon()}
+      footer={
+        <CardFooterWithRefresh 
+          lastUpdated={lastUpdated} 
+          onRefresh={refreshData} 
+        />
+      }
     >
-      <div className="h-full flex flex-col">
-        {isLoading ? (
-          renderLoading()
-        ) : error ? (
-          renderError()
-        ) : (
-          <>
-            <div className="flex-grow p-4">
-              <div className="h-full w-full">
-                {renderChart()}
-              </div>
-            </div>
-            <div className="text-xs text-gray-500 text-right px-4 pb-2">
-              Last updated: {formatLastUpdated()}
-            </div>
-          </>
-        )}
-      </div>
+      {renderChartContent()}
     </DashboardCard>
   );
 };

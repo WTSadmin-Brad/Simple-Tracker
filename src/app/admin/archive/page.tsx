@@ -6,7 +6,8 @@
  */
 
 import { Metadata } from 'next';
-import AdminHeader from '../_components/AdminHeader';
+import AdminHeader from '../_components/admin-header';
+import { ArchiveManagerClient } from './_components/archive-manager-client';
 
 export const metadata: Metadata = {
   title: 'Archive Management | Admin | Simple Tracker',
@@ -21,15 +22,8 @@ export default function ArchiveManagementPage() {
         description="Search and manage archived tickets and data"
       />
       
-      {/* Archive management components will be added here */}
       <div className="mt-6">
-        {/* 
-          TODO: Implement archive management components:
-          - ArchiveSearchBar for searching archived data
-          - ArchiveFilterControls for filtering by date, type, etc.
-          - ArchiveResultsTable for displaying search results
-          - ArchiveRestoreControls for restoring archived items
-        */}
+        <ArchiveManagerClient />
       </div>
     </div>
   );

@@ -1,15 +1,15 @@
 'use client';
 
 /**
- * WizardStateProvider.client.tsx
+ * wizard-state-provider.client.tsx
  * Client component that provides wizard state management functionality
  * Handles auto-saving, session recovery, and connection status detection
  */
 
 import { useEffect } from 'react';
 import { useWizardStore } from '@/stores/wizardStore';
-import ConnectionStatusDetector from '@/components/common/ConnectionStatusDetector.client';
-import SessionRecoveryPrompt from '@/components/feature/tickets/wizard/SessionRecoveryPrompt.client';
+import ConnectionStatusDetector from '@/components/common/connection-status-detector.client';
+import { SessionRecoveryPrompt } from '@/app/employee/tickets/new/_components/session-recovery-prompt.client';
 
 interface WizardStateProviderProps {
   children: React.ReactNode;
@@ -33,12 +33,14 @@ const WizardStateProvider = ({ children }: WizardStateProviderProps) => {
     // Enable auto-save on mount
     enableAutoSave();
     
-    // Set up auto-save interval
+    // Set up auto-save interval with a constant for better maintainability
+    const AUTO_SAVE_INTERVAL_MS = 30000; // 30 seconds
+    
     const autoSaveInterval = setInterval(() => {
       if (isAutoSaving) {
         saveWizardState();
       }
-    }, 30000); // Auto-save every 30 seconds
+    }, AUTO_SAVE_INTERVAL_MS);
     
     // Clean up on unmount
     return () => {
@@ -49,13 +51,13 @@ const WizardStateProvider = ({ children }: WizardStateProviderProps) => {
   
   return (
     <>
-      {/* Connection status detector (invisible component) */}
+      {/* Connection status detector - monitors online/offline status */}
       <ConnectionStatusDetector />
       
-      {/* Session recovery prompt (appears when needed) */}
+      {/* Session recovery prompt - appears when a previous session is detected */}
       <SessionRecoveryPrompt />
       
-      {/* Render children */}
+      {/* Render children components */}
       {children}
     </>
   );

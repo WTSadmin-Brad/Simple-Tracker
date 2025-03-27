@@ -6,5 +6,5 @@
  * @source directory-structure.md - "Form Components" section
  */
 
-export { Form, FormSection, FormActions } from './Form.client';
+export { Form, FormSection, FormActions } from './form.client';
 export * from './form-fields';

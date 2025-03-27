@@ -2,38 +2,68 @@
 
 /**
  * Calendar Content Component (Client Component)
- * Displays the calendar content with data from the calendar store
  * 
- * Enhanced with improved responsive behavior:
- * - Better spacing and sizing for calendar grid
- * - Optimized day headers for all screen sizes
- * - Improved loading state display
+ * Displays the monthly calendar grid with days, workday information, and filter states.
+ * Handles grid layout, day rendering, and interactions with the calendar data.
+ * 
+ * Features:
+ * - Responsive grid layout for all device sizes
+ * - Visual indicators for work types and ticket status
+ * - Filtered view based on selected criteria
+ * - Motion transitions between months
+ * - Accessible navigation and interaction
+ * 
+ * @source Employee_Flows.md - "Workday Logging Flow" section
  */
 
 import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
-import useCalendarStore from '@/stores/calendarStore';
+import { useCalendarDataFetching } from '@/stores/calendarStore';
+import DayCell from '@/components/feature/calendar/day-cell.client';
+import { DATE_FORMATS } from '@/lib/constants/dateFormats';
+import { WorkdayType } from '@/types/workday';
 
-export function CalendarContent() {
+/**
+ * Props for the Calendar Content component
+ */
+interface CalendarContentProps {
+  currentDate?: string;
+  onDaySelect?: (date: Date) => void;
+}
+
+/**
+ * Calendar Content displays the main calendar grid with days and workday information
+ */
+export function CalendarContent({ 
+  currentDate: externalCurrentDate,
+  onDaySelect
+}: CalendarContentProps = {}) {
   const shouldReduceMotion = useReducedMotion();
   const { 
-    currentDate, 
-    filters,
+    isLoading,
+    error,
     fetchMonthData, 
     getWorkdayForDate,
-    setSelectedDate,
-    monthsData,
-    isLoading
-  } = useCalendarStore();
+    monthsData
+  } = useCalendarDataFetching();
   
-  const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date(currentDate));
+  const { 
+    currentDate,
+    filters,
+    setSelectedDate
+  } = useCalendarDataFetching();
+  
+  // Use either the external currentDate or the one from the store
+  const activeDate = externalCurrentDate || currentDate;
+  
+  const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date(activeDate));
   
   // Update local state when store changes
   useEffect(() => {
-    setCurrentMonthDate(new Date(currentDate));
-  }, [currentDate]);
+    setCurrentMonthDate(new Date(activeDate));
+  }, [activeDate]);
   
   // Fetch data for the current month when it changes
   useEffect(() => {
@@ -57,7 +87,11 @@ export function CalendarContent() {
   };
   
   const handleDayClick = (date: Date) => {
-    setSelectedDate(date);
+    if (onDaySelect) {
+      onDaySelect(date);
+    } else {
+      setSelectedDate(date);
+    }
   };
   
   // Filter workdays based on current filters
@@ -88,7 +122,7 @@ export function CalendarContent() {
   };
   
   const days = getDaysInMonthView(currentMonthDate);
-  const monthKey = format(currentMonthDate, 'yyyy-MM');
+  const monthKey = format(currentMonthDate, DATE_FORMATS.MONTH_KEY || 'yyyy-MM');
   const hasData = monthsData[monthKey] !== undefined;
   
   // Get day name display based on screen size
@@ -99,103 +133,90 @@ export function CalendarContent() {
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     .map(getDayNameDisplay);
   
+  // Handle error state
+  if (error) {
+    return (
+      <div className="bg-red-100 dark:bg-red-900/20 p-4 rounded-md border border-red-200 dark:border-red-800">
+        <p className="text-red-800 dark:text-red-300 text-sm">
+          Error loading calendar data: {error}
+        </p>
+      </div>
+    );
+  }
+  
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={monthKey}
-        initial={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
-        animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1 }}
-        exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
-        transition={{ duration: 0.2 }}
-        className="relative mt-2 md:mt-4 rounded-md overflow-hidden"
-      >
-        {/* Loading overlay with improved visual feedback */}
-        {isLoading && (
-          <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center z-10 rounded-md backdrop-blur-sm">
-            <div className="flex flex-col items-center">
-              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-2"></div>
-              <p className="text-sm text-muted-foreground">Loading calendar data...</p>
-            </div>
-          </div>
-        )}
-        
-        <div className="grid grid-cols-7 gap-1 sm:gap-2 md:gap-3">
-          {/* Day headers - responsive for all screen sizes */}
-          {dayNames.map((day, index) => (
+    <div role="grid" aria-label="Monthly calendar" className="relative">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={monthKey}
+          initial={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
+          animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1 }}
+          exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="relative mt-2 md:mt-4 rounded-md overflow-hidden"
+        >
+          {/* Loading overlay with improved visual feedback */}
+          {isLoading && (
             <div 
-              key={index} 
-              className="text-center font-medium text-gray-700 dark:text-gray-300 py-2 text-xs sm:text-sm"
+              className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center z-10 rounded-md backdrop-blur-sm"
+              aria-live="polite"
+              aria-busy="true"
             >
-              <span className="hidden sm:inline">{day.full}</span>
-              <span className="sm:hidden">{day.short}</span>
-            </div>
-          ))}
-          
-          {/* Calendar days - with improved spacing and sizing */}
-          {days.map((day, index) => {
-            const isCurrentMonth = isSameMonth(day, currentMonthDate);
-            const isToday = isSameDay(day, new Date());
-            
-            // Get workday data for this day
-            const workday = hasData ? getWorkdayForDate(day) : undefined;
-            const workType = workday?.workType;
-            const hasTickets = !!workday?.ticketSummary;
-            
-            // Check if this day should be shown based on filters
-            const isVisible = shouldShowDay(day);
-            
-            // Handle DayCell component import manually since we were having an issue
-            // Previously imported as: import DayCell from '@/components/feature/calendar/DayCell.client';
-            // Now directly implementing the cell rendering:
-            
-            // Get appropriate color class based on work type
-            const getWorkTypeColorClass = (type?: string) => {
-              switch (type) {
-                case 'full': return 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700';
-                case 'half': return 'bg-yellow-100 dark:bg-yellow-900 border-yellow-300 dark:border-yellow-700';
-                case 'off': return 'bg-red-100 dark:bg-red-900 border-red-300 dark:border-red-700';
-                default: return 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700';
-              }
-            };
-            
-            const colorClass = getWorkTypeColorClass(workType);
-            const dayNumber = format(day, 'd');
-            
-            return (
-              <div 
-                key={index}
-                className={`${!isVisible && isCurrentMonth ? 'opacity-30' : 'opacity-100'} transition-opacity duration-200`}
-              >
-                <motion.div
-                  whileHover={{ scale: shouldReduceMotion ? 1 : 1.02 }}
-                  whileTap={{ scale: shouldReduceMotion ? 1 : 0.98 }}
-                  onClick={() => handleDayClick(day)}
-                  className={`
-                    aspect-square border rounded-md overflow-hidden cursor-pointer touch-target
-                    ${isCurrentMonth ? colorClass : 'bg-gray-100 dark:bg-gray-900 text-gray-400 dark:text-gray-600'}
-                    ${isToday ? 'ring-2 ring-primary ring-offset-2 dark:ring-offset-gray-900' : ''}
-                  `}
-                  data-date={format(day, 'yyyy-MM-dd')}
-                >
-                  <div className="p-1 sm:p-2 h-full flex flex-col">
-                    <div className={`text-xs sm:text-sm font-medium ${isToday ? 'text-primary font-bold' : ''}`}>
-                      {dayNumber}
-                    </div>
-                    
-                    {/* Ticket indicator */}
-                    {hasTickets && (
-                      <div className="mt-auto self-end">
-                        <div className="w-2 h-2 md:w-3 md:h-3 bg-blue-500 dark:bg-blue-400 rounded-full mr-1 mb-1"></div>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
+              <div className="flex flex-col items-center">
+                <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-2"></div>
+                <p className="text-sm text-muted-foreground">Loading calendar data...</p>
               </div>
-            );
-          })}
-        </div>
-      </motion.div>
-    </AnimatePresence>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 md:gap-3">
+            {/* Day headers - responsive for all screen sizes */}
+            {dayNames.map((day, index) => (
+              <div 
+                key={index} 
+                className="text-center font-medium text-gray-700 dark:text-gray-300 py-2 text-xs sm:text-sm"
+                role="columnheader"
+                aria-label={day.full}
+              >
+                <span className="hidden sm:inline">{day.full}</span>
+                <span className="sm:hidden">{day.short}</span>
+              </div>
+            ))}
+            
+            {/* Calendar days - with improved spacing and sizing */}
+            {days.map((day, index) => {
+              const isCurrentMonth = isSameMonth(day, currentMonthDate);
+              const isToday = isSameDay(day, new Date());
+              
+              // Get workday data for this day
+              const workday = hasData ? getWorkdayForDate(day) : undefined;
+              const workType = workday?.workType;
+              const hasTickets = !!workday?.ticketSummary;
+              
+              // Check if this day should be shown based on filters
+              const isVisible = shouldShowDay(day);
+              
+              return (
+                <div 
+                  key={index}
+                  className={`${!isVisible && isCurrentMonth ? 'opacity-30' : 'opacity-100'} transition-opacity duration-200`}
+                  role="gridcell"
+                >
+                  <DayCell
+                    date={day}
+                    isCurrentMonth={isCurrentMonth}
+                    workType={workType}
+                    hasTickets={hasTickets}
+                    isToday={isToday}
+                    onClick={handleDayClick}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }
 

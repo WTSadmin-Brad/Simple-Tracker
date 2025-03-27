@@ -1,5 +1,5 @@
 /**
- * Date Field Component
+ * date-field.client.tsx
  * 
  * A reusable date input field with validation and error handling.
  * 
@@ -10,7 +10,6 @@
 
 import React from 'react';
 import { Label } from '@/components/ui/label.client';
-import { Input } from '@/components/ui/input.client';
 import { Calendar } from '@/components/ui/calendar.client';
 import { Button } from '@/components/ui/button.client';
 import {
@@ -54,8 +53,17 @@ export function DateField({
   const errorId = `${fieldId}-error`;
   const hintId = `${fieldId}-hint`;
   
+  // Create date constraint function for the calendar
+  const isDateDisabled = (date: Date) => {
+    if (disabled) return true;
+    const isBeforeMin = minDate && date < minDate;
+    const isAfterMax = maxDate && date > maxDate;
+    return isBeforeMin || isAfterMax;
+  };
+  
   return (
     <div className="space-y-2">
+      {/* Field label */}
       <div className="flex items-center justify-between">
         <Label 
           htmlFor={fieldId}
@@ -69,6 +77,7 @@ export function DateField({
         </Label>
       </div>
       
+      {/* Date picker */}
       <Popover>
         <PopoverTrigger asChild>
           <Button
@@ -96,16 +105,13 @@ export function DateField({
             mode="single"
             selected={value}
             onSelect={onChange}
-            disabled={disabled || ((date) => {
-              const isBeforeMin = minDate && date < minDate;
-              const isAfterMax = maxDate && date > maxDate;
-              return isBeforeMin || isAfterMax;
-            })}
+            disabled={isDateDisabled}
             initialFocus
           />
         </PopoverContent>
       </Popover>
       
+      {/* Error message */}
       {error && (
         <p 
           id={errorId}
@@ -115,6 +121,7 @@ export function DateField({
         </p>
       )}
       
+      {/* Hint text */}
       {hint && !error && (
         <p 
           id={hintId}

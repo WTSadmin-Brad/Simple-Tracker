@@ -8,8 +8,8 @@
 import { Metadata } from 'next';
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
-import AdminHeader from '../../_components/AdminHeader';
-import EntityDetailView from '@/components/feature/admin/data-grid/EntityDetailView.client';
+import AdminHeader from '../../_components/admin-header';
+import { EntityDetailView } from '@/components/feature/admin/data-grid';
 import { truckDetailFields, truckDetailTabs } from '@/components/feature/admin/config';
 import { getTruckById } from '@/lib/services/truckService';
 import { Skeleton } from '@/components/ui/skeleton';

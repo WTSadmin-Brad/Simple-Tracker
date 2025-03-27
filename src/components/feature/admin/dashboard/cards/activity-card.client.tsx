@@ -5,11 +5,10 @@
  * @source Admin_Flows.md - "Dashboard" section - "Activity card"
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { 
-  RefreshCcw, 
   Clock, 
   User, 
   FileText, 
@@ -20,12 +19,13 @@ import {
   LogIn,
   LogOut
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import DashboardCard from '../DashboardCard.client';
-import { CardSize } from '../DashboardCard.client';
-import dashboardService, { ActivityData } from '@/lib/services/dashboardService';
+import DashboardCard from '../dashboard-card.client';
+import { CardSize } from '../dashboard-card.client';
+import dashboardService from '@/lib/services/dashboardService';
 import { format, formatDistanceToNow } from 'date-fns';
+import { useCardData } from '../hooks';
+import { CardLoadingState, CardErrorState, CardEmptyState, CardFooterWithRefresh } from '../components';
 
 interface ActivityCardProps {
   id: string;
@@ -58,50 +58,24 @@ const ActivityCard = ({
   onResize
 }: ActivityCardProps) => {
   const prefersReducedMotion = useReducedMotion();
-  const [activityData, setActivityData] = useState<ActivityData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   
-  // Fetch activity data
+  // Create fetch function for the hook
   const fetchActivityData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Use dashboard service to fetch activity data
-      const result = await dashboardService.fetchActivityData(
-        activityTypes,
-        maxItems
-      );
-      
-      setActivityData(result);
-      setLastUpdated(result.lastUpdated);
-    } catch (err) {
-      setError('Failed to load activity data');
-      console.error('Error fetching activity data:', err);
-    } finally {
-      setIsLoading(false);
-    }
+    // Use dashboard service to fetch activity data
+    return await dashboardService.fetchActivityData(
+      activityTypes,
+      maxItems
+    );
   }, [activityTypes, maxItems]);
   
-  // Initial data fetch
-  useEffect(() => {
-    fetchActivityData();
-  }, [fetchActivityData]);
-  
-  // Set up refresh interval
-  useEffect(() => {
-    if (refreshInterval > 0) {
-      const intervalId = setInterval(fetchActivityData, refreshInterval * 1000);
-      return () => clearInterval(intervalId);
-    }
-  }, [refreshInterval, fetchActivityData]);
-  
-  // Format the last updated time
-  const formatLastUpdated = () => {
-    return lastUpdated.toLocaleTimeString();
-  };
+  // Use the shared hook for data fetching
+  const { 
+    data: activityData, 
+    isLoading, 
+    error, 
+    lastUpdated, 
+    refreshData 
+  } = useCardData(fetchActivityData, refreshInterval, [activityTypes, maxItems]);
   
   // Get activity icon based on type
   const getActivityIcon = (type: string) => {
@@ -134,53 +108,18 @@ const ActivityCard = ({
       .slice(0, 2);
   };
   
-  // Render loading state
-  const renderLoading = () => {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
-      </div>
-    );
-  };
-  
-  // Render error state
-  const renderError = () => {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-red-500 p-4">
-        <div className="text-2xl mb-2">⚠️</div>
-        <div className="mb-2">{error}</div>
-        <Button 
-          onClick={fetchActivityData}
-          variant="outline"
-          size="sm"
-        >
-          Retry
-        </Button>
-      </div>
-    );
-  };
-  
-  // Render empty state
-  const renderEmptyState = () => {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 p-4">
-        <div className="text-2xl mb-2">📋</div>
-        <div className="mb-2">No activity found</div>
-        <Button 
-          onClick={fetchActivityData}
-          variant="outline"
-          size="sm"
-        >
-          Refresh
-        </Button>
-      </div>
-    );
-  };
-  
   // Render activity content
   const renderActivityContent = () => {
+    if (isLoading) {
+      return <CardLoadingState />;
+    }
+    
+    if (error) {
+      return <CardErrorState error={error} onRetry={refreshData} />;
+    }
+    
     if (!activityData || !activityData.items || activityData.items.length === 0) {
-      return renderEmptyState();
+      return <CardEmptyState message="No activity found" onRefresh={refreshData} />;
     }
     
     return (
@@ -199,47 +138,34 @@ const ActivityCard = ({
             <div className="mr-3 mt-0.5">
               {getActivityIcon(item.type)}
             </div>
+            
             <div className="flex-grow">
-              <div className="flex items-start justify-between">
-                <div className="text-sm">
-                  {item.message}
-                </div>
-                {showUser && item.user && (
-                  <Avatar className="h-6 w-6 ml-2">
-                    <AvatarFallback className="text-xs bg-gray-100 text-gray-600">
-                      {getUserInitials(item.user.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                )}
+              <div className="text-sm">
+                <span dangerouslySetInnerHTML={{ __html: item.message }} />
               </div>
+              
               <div className="flex items-center mt-1 text-xs text-gray-500">
                 <Clock className="h-3 w-3 mr-1" />
-                <time dateTime={item.timestamp.toISOString()} title={format(item.timestamp, 'PPpp')}>
-                  {formatDistanceToNow(item.timestamp, { addSuffix: true })}
-                </time>
-                {showUser && item.user && (
-                  <span className="ml-2">{item.user.name}</span>
-                )}
+                <span>
+                  {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
+                </span>
               </div>
             </div>
+            
+            {showUser && item.user && (
+              <div className="ml-2">
+                <Avatar className="h-6 w-6">
+                  <AvatarFallback className="text-xs">
+                    {getUserInitials(item.user.name)}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+            )}
           </motion.div>
         ))}
       </div>
     );
   };
-  
-  // Render refresh button
-  const RefreshButton = () => (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-7 w-7 rounded-full"
-      onClick={fetchActivityData}
-      title="Refresh activity"
-    >
-      <RefreshCcw className="h-4 w-4" />
-    </Button>
-  );
   
   return (
     <DashboardCard
@@ -250,25 +176,14 @@ const ActivityCard = ({
       onEdit={onEdit}
       onRemove={onRemove}
       onResize={onResize}
-      headerActions={<RefreshButton />}
-      className="activity-card"
+      footer={
+        <CardFooterWithRefresh 
+          lastUpdated={lastUpdated} 
+          onRefresh={refreshData} 
+        />
+      }
     >
-      <div className="h-full flex flex-col">
-        {isLoading ? (
-          renderLoading()
-        ) : error ? (
-          renderError()
-        ) : (
-          <>
-            <div className="flex-grow overflow-auto">
-              {renderActivityContent()}
-            </div>
-            <div className="text-xs text-gray-500 text-right px-4 pb-2">
-              Last updated: {formatLastUpdated()}
-            </div>
-          </>
-        )}
-      </div>
+      {renderActivityContent()}
     </DashboardCard>
   );
 };

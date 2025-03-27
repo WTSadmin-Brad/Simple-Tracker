@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * EntityDetailView.client.tsx
+ * entity-detail-view.client.tsx
  * Generic detail view component for admin entities using the configuration system
  * 
  * This component displays detailed information about any entity type based on
@@ -20,23 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { fadeVariants } from '@/lib/animations/variants';
 import { defaultSpring } from '@/lib/animations/springs';
-import { DetailField } from './DetailPanel.client';
-
-interface EntityDetailViewProps<T = any> {
-  entityId: string;
-  entityType: string;
-  title: string;
-  description?: string;
-  backLink: string;
-  detailFields: DetailField[];
-  tabs?: {
-    id: string;
-    label: string;
-    fields: DetailField[];
-  }[];
-  fetchEntity: (id: string) => Promise<T | null>;
-  actions?: React.ReactNode;
-}
+import { EntityDetailViewProps } from './types';
 
 /**
  * Generic EntityDetailView component
@@ -48,17 +32,17 @@ export default function EntityDetailView<T extends Record<string, any>>({
   title,
   description,
   backLink,
-  detailFields,
-  tabs,
+  sections,
   fetchEntity,
-  actions
+  actions,
+  className = ''
 }: EntityDetailViewProps<T>) {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
   const [entity, setEntity] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState(tabs && tabs.length > 0 ? tabs[0].id : 'details');
+  const [activeTab, setActiveTab] = useState(sections && sections.length > 0 ? sections[0].title : 'details');
 
   // Fetch entity data
   useEffect(() => {
@@ -88,49 +72,43 @@ export default function EntityDetailView<T extends Record<string, any>>({
     router.push(backLink);
   };
 
-  // Render a field value based on its type
-  const renderFieldValue = (field: DetailField, entity: T) => {
-    const value = entity[field.key];
-    
-    if (field.renderValue) {
-      return field.renderValue(value);
+  // Render a field value based on its key or format function
+  const renderFieldValue = (field: { label: string; key: keyof T | ((item: T) => React.ReactNode); format?: (value: any) => React.ReactNode }, entity: T) => {
+    // If key is a function, use it to render the value
+    if (typeof field.key === 'function') {
+      return field.key(entity);
     }
     
-    switch (field.type) {
-      case 'date':
-        return value instanceof Date ? value.toLocaleDateString() : value;
-      case 'image':
-        return value ? (
-          <div className="mt-2">
-            <img 
-              src={value} 
-              alt={field.label} 
-              className="max-w-full h-auto rounded-md" 
-            />
-          </div>
-        ) : 'No image';
-      case 'list':
-        return Array.isArray(value) ? (
+    // Otherwise, get the value from the entity
+    const value = entity[field.key];
+    
+    // If format function is provided, use it
+    if (field.format) {
+      return field.format(value);
+    }
+    
+    // Default rendering based on value type
+    if (value === null || value === undefined) {
+      return 'N/A';
+    }
+    
+    if (typeof value === 'object') {
+      if (value instanceof Date) {
+        return value.toLocaleDateString();
+      }
+      if (Array.isArray(value)) {
+        return (
           <ul className="list-disc pl-5 mt-2">
             {value.map((item, i) => (
               <li key={i}>{typeof item === 'object' ? JSON.stringify(item) : String(item)}</li>
             ))}
           </ul>
-        ) : value;
-      case 'link':
-        return value ? (
-          <a 
-            href={value} 
-            className="text-primary hover:underline"
-            target="_blank" 
-            rel="noopener noreferrer"
-          >
-            {value}
-          </a>
-        ) : 'No link';
-      default:
-        return typeof value === 'object' ? JSON.stringify(value) : String(value || 'N/A');
+        );
+      }
+      return JSON.stringify(value);
     }
+    
+    return String(value);
   };
 
   // Loading state
@@ -141,6 +119,7 @@ export default function EntityDetailView<T extends Record<string, any>>({
         animate="visible"
         variants={fadeVariants}
         transition={shouldReduceMotion ? { duration: 0 } : defaultSpring}
+        className={className}
       >
         <Card className="w-full">
           <CardHeader>
@@ -179,6 +158,7 @@ export default function EntityDetailView<T extends Record<string, any>>({
         animate="visible"
         variants={fadeVariants}
         transition={shouldReduceMotion ? { duration: 0 } : defaultSpring}
+        className={className}
       >
         <Card className="w-full">
           <CardHeader>
@@ -204,12 +184,16 @@ export default function EntityDetailView<T extends Record<string, any>>({
     );
   }
 
+  // Determine if we should use tabs
+  const useTabs = sections && sections.length > 1;
+
   return (
     <motion.div
       initial="hidden"
       animate="visible"
       variants={fadeVariants}
       transition={shouldReduceMotion ? { duration: 0 } : defaultSpring}
+      className={className}
     >
       <Card className="w-full">
         <CardHeader>
@@ -226,21 +210,21 @@ export default function EntityDetailView<T extends Record<string, any>>({
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         
-        {tabs && tabs.length > 0 ? (
+        {useTabs ? (
           <CardContent>
             <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
               <TabsList className="mb-4">
-                {tabs.map(tab => (
-                  <TabsTrigger key={tab.id} value={tab.id}>
-                    {tab.label}
+                {sections.map(section => (
+                  <TabsTrigger key={section.title} value={section.title}>
+                    {section.title}
                   </TabsTrigger>
                 ))}
               </TabsList>
               
-              {tabs.map(tab => (
-                <TabsContent key={tab.id} value={tab.id} className="space-y-6">
-                  {tab.fields.map(field => (
-                    <div key={field.key} className="space-y-1">
+              {sections.map(section => (
+                <TabsContent key={section.title} value={section.title} className="space-y-6">
+                  {section.fields.map((field, index) => (
+                    <div key={index} className="space-y-1">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
                         {field.label}
                       </h3>
@@ -255,8 +239,8 @@ export default function EntityDetailView<T extends Record<string, any>>({
           </CardContent>
         ) : (
           <CardContent className="space-y-6">
-            {detailFields.map(field => (
-              <div key={field.key} className="space-y-1">
+            {sections && sections[0]?.fields.map((field, index) => (
+              <div key={index} className="space-y-1">
                 <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
                   {field.label}
                 </h3>

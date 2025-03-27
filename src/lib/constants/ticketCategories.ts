@@ -76,6 +76,80 @@ export function getCounterColorState(value: number): CounterColorState {
 }
 
 /**
+ * Get counter color CSS class based on value
+ * 
+ * @param value - Counter value
+ * @returns CSS class string for the counter
+ */
+export function getCounterColorClass(value: number): string {
+  const colorState = getCounterColorState(value);
+  
+  switch (colorState) {
+    case 'red':
+      return 'bg-counter-red text-white';
+    case 'yellow':
+      return 'bg-counter-yellow text-black';
+    case 'green':
+      return 'bg-counter-green text-white';
+    case 'gold':
+      return 'bg-counter-gold text-black';
+    default:
+      return 'bg-counter-red text-white';
+  }
+}
+
+/**
+ * Get counter gradient based on value
+ * 
+ * @param value - Counter value
+ * @returns CSS gradient string for the counter
+ */
+export function getCounterGradient(value: number): string {
+  if (value === COLOR_THRESHOLDS.RED) {
+    // Red gradient for 0
+    return 'linear-gradient(135deg, hsl(0, 84%, 55%), hsl(0, 84%, 65%))';
+  } else if (value >= COLOR_THRESHOLDS.YELLOW && value < COLOR_THRESHOLDS.GREEN) {
+    // Calculate a gradient that shifts from red to yellow based on position in range
+    const percentage = (value - COLOR_THRESHOLDS.YELLOW) / (COLOR_THRESHOLDS.GREEN - COLOR_THRESHOLDS.YELLOW - 1);
+    return `linear-gradient(135deg, 
+      hsl(${Math.round(percentage * 45)}, 90%, 55%), 
+      hsl(${Math.round(percentage * 45 + 5)}, 90%, 65%))`;
+  } else if (value >= COLOR_THRESHOLDS.GREEN && value < COLOR_THRESHOLDS.GOLD) {
+    // Calculate a gradient that shifts from yellow to green based on position in range
+    const percentage = (value - COLOR_THRESHOLDS.GREEN) / (COLOR_THRESHOLDS.GOLD - COLOR_THRESHOLDS.GREEN - 1);
+    return `linear-gradient(135deg, 
+      hsl(${Math.round(45 + percentage * 97)}, 80%, 45%), 
+      hsl(${Math.round(45 + percentage * 97 + 5)}, 80%, 55%))`;
+  } else {
+    // Gold gradient for 125-150
+    return 'linear-gradient(135deg, hsl(43, 96%, 50%), hsl(43, 96%, 60%))';
+  }
+}
+
+/**
+ * Get solid counter color for fallback and compatibility
+ * 
+ * @param value - Counter value
+ * @returns CSS color variable for the counter
+ */
+export function getCounterSolidColor(value: number): string {
+  const colorState = getCounterColorState(value);
+  
+  switch (colorState) {
+    case 'red':
+      return 'var(--counter-red)';
+    case 'yellow':
+      return 'var(--counter-yellow)';
+    case 'green':
+      return 'var(--counter-green)';
+    case 'gold':
+      return 'var(--counter-gold)';
+    default:
+      return 'var(--counter-red)';
+  }
+}
+
+/**
  * Initial category values
  * Default values for each category counter
  */

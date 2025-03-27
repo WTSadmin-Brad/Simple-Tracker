@@ -1,5 +1,5 @@
 /**
- * Form Component
+ * form.client.tsx
  * 
  * A reusable form component with built-in validation using React Hook Form and Zod.
  * 
@@ -35,6 +35,7 @@ interface FormProps<T extends FieldValues> {
 
 /**
  * Form component with React Hook Form and Zod validation
+ * Provides a consistent form structure with built-in validation
  */
 export function Form<T extends FieldValues>({
   schema,
@@ -50,10 +51,10 @@ export function Form<T extends FieldValues>({
   const methods = useForm<T>({
     resolver: schema ? zodResolver(schema) : undefined,
     defaultValues,
-    mode: 'onBlur',
+    mode: 'onBlur', // Validate on blur for better UX
   });
 
-  // Handle form submission
+  // Handle form submission with loading state protection
   const handleSubmit = methods.handleSubmit(async (data) => {
     if (!isSubmitting && !disabled) {
       await onSubmit(data);
@@ -66,9 +67,12 @@ export function Form<T extends FieldValues>({
         id={id}
         className={cn(className)}
         onSubmit={handleSubmit}
-        noValidate
+        noValidate // Use our own validation
       >
-        <fieldset disabled={isSubmitting || disabled} className="space-y-4">
+        <fieldset 
+          disabled={isSubmitting || disabled} 
+          className="space-y-4"
+        >
           {children}
         </fieldset>
       </form>
@@ -78,6 +82,7 @@ export function Form<T extends FieldValues>({
 
 /**
  * Form Section component for grouping related form fields
+ * Creates a visual section with optional title and description
  */
 export function FormSection({
   title,
@@ -92,6 +97,7 @@ export function FormSection({
 }) {
   return (
     <div className={cn("space-y-4", className)}>
+      {/* Section header with title and description */}
       {(title || description) && (
         <div className="space-y-1">
           {title && (
@@ -102,6 +108,8 @@ export function FormSection({
           )}
         </div>
       )}
+      
+      {/* Section content */}
       <div className="space-y-4">
         {children}
       </div>
@@ -111,6 +119,7 @@ export function FormSection({
 
 /**
  * Form Actions component for form buttons
+ * Provides consistent positioning and spacing for form actions
  */
 export function FormActions({
   children,

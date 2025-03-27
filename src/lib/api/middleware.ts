@@ -5,6 +5,9 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { verifyIdToken } from '../firebase/admin';
+import { ValidationError } from '../../types/errors';
+import { ErrorCodes } from '../../types/errorCodes';
 
 /**
  * Validates request body against a Zod schema
@@ -123,4 +126,61 @@ export function handleApiError(error: unknown, customMessage?: string): NextResp
     },
     { status: isClientError ? 400 : 500 }
   );
+}
+
+/**
+ * Authenticates a request using Firebase Auth
+ * Extracts the token from the Authorization header and verifies it
+ * 
+ * @param handler Request handler function to call if authentication passes
+ * @returns A handler function that includes authentication
+ */
+export function authenticateRequest<T>(
+  handler: (userId: string, request: Request) => Promise<NextResponse<T>>
+) {
+  return async (request: Request) => {
+    try {
+      // Get auth token from header
+      const authHeader = request.headers.get('authorization');
+      
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Authentication required',
+            error: {
+              code: ErrorCodes.AUTH_REQUIRED
+            }
+          },
+          { status: 401 }
+        );
+      }
+      
+      const token = authHeader.split('Bearer ')[1];
+      
+      try {
+        // Verify token and get user ID
+        const decodedToken = await verifyIdToken(token);
+        const userId = decodedToken.uid;
+        
+        // Call handler with validated userId
+        return handler(userId, request);
+      } catch (error) {
+        console.error('Auth error:', error);
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Invalid authentication token',
+            error: {
+              code: ErrorCodes.AUTH_INVALID_TOKEN
+            }
+          },
+          { status: 401 }
+        );
+      }
+    } catch (error) {
+      // Handle other errors
+      return handleApiError(error, 'Authentication failed');
+    }
+  };
 }
