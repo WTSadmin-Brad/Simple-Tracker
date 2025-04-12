@@ -1,0 +1,42 @@
+{
+  // --- Editor Settings ---
+  "editor.formatOnSave": true, // Automatically format the file when saving
+  "editor.defaultFormatter": "esbenp.prettier-vscode", // Use Prettier as the default formatter for relevant files
+
+  // --- ESLint Settings ---
+  "eslint.validate": [ // Tell ESLint which languages to check
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "editor.codeActionsOnSave": {
+    // Automatically fix ESLint issues on save
+    "source.fixAll.eslint": true
+  },
+
+  // --- Tailwind CSS IntelliSense Settings ---
+  // Usually works automatically, but explicitly setting the config path can help if needed.
+  // "tailwindCSS.experimental.configFile": "tailwind.config.mjs", // Uncomment if IntelliSense has issues finding the config
+
+  // --- Optional: Language-Specific Formatting ---
+  // Ensure Prettier is used for these file types specifically
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+     "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}
