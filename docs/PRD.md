@@ -74,10 +74,13 @@ This document outlines the requirements for the Workday & Ticket Tracking PWA, a
 
 | **Area**           | **Tools**                                                                 |
 | ------------------ | ------------------------------------------------------------------------- |
-| **Frontend**       | Next.js 13.4.12 (App Router), Tailwind CSS 3.3.3, shadcn/ui, Framer Motion 10.12.18 |
-| **Backend**        | Next.js API Routes, Firebase Firestore (NoSQL - Client SDK 10.7.1), Firebase Storage (images) |
-| **Authentication** | Custom Username/Password flow via Next.js API, using Firebase Admin SDK (Custom Tokens, Claims) & Client SDK |
-| **Animation**      | Framer Motion 10.12.18 for physics-based animations and micro-interactions         |
+| **Framework**      | Next.js (~14.2, App Router), React (18.2)                                 |
+| **Language**       | TypeScript (~5.1)                                                         |
+| **UI/Styling**     | Tailwind CSS (~3.3), shadcn/ui (Radix UI), Framer Motion (Animations)     |
+| **State Management** | Zustand (~4.3, Client), TanStack Query (~5.69, Server)                    |
+| **Forms**          | React Hook Form (~7.45), Zod (~3.21, Validation)                          |
+| **Backend**        | Next.js API Routes w/ Firebase Admin SDK (~13.2) (Firestore, Storage)     |
+| **Authentication** | Custom Flow w/ Firebase Admin SDK (~13.2) & Client SDK (~10.7)            |
 
 ## Success Metrics
 
@@ -113,6 +116,6 @@ This document outlines the requirements for the Workday & Ticket Tracking PWA, a
 
 ## Document Information
 
-**Last Updated:** 2025-03-11  
+**Last Updated:** 2025-04-12
 **Author/Maintainer:** Development Team  
 **Status:** Updated - Enhanced ticket submission with wizard and micro-interactions

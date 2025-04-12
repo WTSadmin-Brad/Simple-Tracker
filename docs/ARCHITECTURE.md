@@ -40,7 +40,7 @@ Simple Tracker is a web application for tracking work activities with:
 
 - **Frontend Framework**: Next.js 13.4.12 (App Router)
 - **UI Library**: React 18.2.0 with TypeScript 5.1.6
-- **Styling**: Tailwind CSS 3.3.3 (using Radix UI primitives directly, *not* shadcn/ui)
+- **Styling/Components**: Tailwind CSS 3.3.3 and `shadcn/ui` (built on Radix UI primitives).
 - **State Management**: Zustand 4.3.9 for client state, TanStack Query 5.69.0 for server state
 - **Form Management**: React Hook Form 7.45.2 with Zod 3.21.4 for validation
 - **Backend**: Firebase (Firestore + Storage - Client SDK 10.7.1, Admin SDK used server-side)
@@ -107,7 +107,7 @@ Simple Tracker uses a layered component approach:
 
 1. **UI Primitives** (`/src/components/ui/`)
    - Basic building blocks (buttons, inputs, cards)
-   - Based on Radix UI primitives with consistent styling
+   - Based on `shadcn/ui` components (which use Radix UI primitives) with consistent styling via Tailwind CSS.
 
 2. **Common Components** (`/src/components/common/`)
    - Shared UI patterns used across features

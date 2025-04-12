@@ -12,10 +12,10 @@ import Link from 'next/link';
 import { ArrowLeftIcon } from 'lucide-react';
 
 interface AdminHeaderProps {
-  title: string;
-  description?: string;
-  backLink?: string;
-  children?: React.ReactNode;
+  readonly title: string;
+  readonly description?: string;
+  readonly backLink?: string;
+  readonly children?: React.ReactNode;
 }
 
 export default function AdminHeader({ 
