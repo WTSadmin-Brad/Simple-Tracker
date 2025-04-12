@@ -13,7 +13,11 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { jwtDecode } from 'jwt-decode';
+// Removed: import { jwtDecode } from 'jwt-decode';
+// Import verifyIdToken - assumes admin SDK is initialized elsewhere or handles it.
+// NOTE: Direct Admin SDK usage in Edge middleware can be tricky.
+// If issues arise, consider an internal API route for verification.
+import { verifyIdToken } from '@/lib/firebase/admin';
 
 // Paths that should be accessible without authentication
 const PUBLIC_PATHS = [
@@ -45,7 +49,7 @@ interface JwtPayload {
 /**
  * Main middleware function that processes each request
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) { // Added async
   const { pathname } = request.nextUrl;
   
   // Allow public paths without authentication
@@ -53,47 +57,53 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Get auth token from cookies
-  const token = request.cookies.get('auth-token')?.value;
+  // Get auth token from Authorization header
+  const authHeader = request.headers.get('authorization');
+  let token: string | undefined;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split('Bearer ')[1];
+  }
   
   // If no token is present, redirect to login
   if (!token) {
+    console.log('Middleware: No token found, redirecting to login.');
     return redirectToLogin(request, pathname, 'unauthorized');
   }
   
   // Validate the token
+  // Validate the token using Firebase Admin SDK
   try {
-    // Decode JWT to get payload
-    const payload = jwtDecode<JwtPayload>(token);
+    const decodedToken = await verifyIdToken(token);
     
-    // Check if token is expired
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    if (payload.exp <= currentTimestamp) {
-      return redirectToLogin(request, pathname, 'expired');
-    }
-    
+    // Extract role from verified claims
+    const role = decodedToken.role || 'employee'; // Default if claim missing
+
     // Check role for admin routes
     if (ADMIN_PATHS.some(path => pathname.startsWith(path))) {
-      if (payload.role !== 'admin') {
-        // User doesn't have admin privileges
+      if (role !== 'admin') {
+        // User doesn't have admin privileges, redirect to 403 page
+        console.warn(`Middleware: Forbidden access attempt by user ${decodedToken.uid} (role: ${role}) to ${pathname}`);
         return NextResponse.redirect(new URL('/403', request.url));
       }
     }
     
-    // Token is valid, add user info to headers for downstream use
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-user-id', payload.sub);
-    requestHeaders.set('x-user-role', payload.role);
-    
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-  } catch (error) {
-    // Invalid token format or other error
-    console.error('Middleware token validation error:', error);
-    return redirectToLogin(request, pathname, 'invalid');
+    // Token is valid and role check (if applicable) passed.
+    // Do NOT forward user info via headers. API routes will verify the token themselves.
+    return NextResponse.next();
+
+  } catch (error: any) {
+    // Handle verification errors (expired, revoked, invalid signature etc.)
+    // verifyIdToken should throw a descriptive error
+    console.error(`Middleware token verification failed for path ${pathname}:`, error.message || error);
+    // Redirect to login, potentially passing the reason
+    let reason = 'invalid';
+    if (error.message?.includes('expired')) {
+      reason = 'expired';
+    } else if (error.message?.includes('revoked')) {
+      reason = 'revoked';
+    }
+    return redirectToLogin(request, pathname, reason);
   }
 }
 

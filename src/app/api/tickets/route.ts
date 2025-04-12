@@ -5,7 +5,9 @@
  */
 
 import { NextResponse } from 'next/server';
-import { handleApiError, authenticateRequest } from '@/lib/api/middleware';
+import { handleApiError, withAuthentication } from '@/lib/api/middleware'; // Changed import
+import { AuthenticatedUser } from '@/types/api'; // Import AuthenticatedUser
+import { createSuccessResponse, createPaginatedResponse } from '@/lib/api/responseUtils';
 import ticketService from '@/lib/services/ticketService';
 import { z } from 'zod';
 import { ValidationError, ErrorCodes } from '@/lib/errors/error-types';
@@ -22,7 +24,7 @@ const getTicketsSchema = z.object({
   search: z.string().optional(),
   page: z.number().int().min(1).optional(),
   limit: z.number().int().min(1).max(100).optional(),
-  sortField: z.string().optional(),
+  sortField: z.string().optional(), // Will validate if it's keyof Ticket later
   sortDirection: z.enum(['asc', 'desc']).optional(),
 });
 
@@ -36,11 +38,15 @@ const createTicketSchema = z.object({
   truckNumber: z.string({
     required_error: "Truck number is required"
   }),
-  truckNickname: z.string().optional(),
+  truckNickname: z.string({ // Make required to match CreateTicketData
+    required_error: "Truck nickname is required"
+  }),
   jobsite: z.string({
     required_error: "Jobsite is required"
   }),
-  jobsiteName: z.string().optional(),
+  jobsiteName: z.string({ // Make required to match CreateTicketData
+    required_error: "Jobsite name is required"
+  }),
   categories: z.object({
     hangers: z.number().int().min(0),
     leaner6To12: z.number().int().min(0),
@@ -49,7 +55,7 @@ const createTicketSchema = z.object({
     leaner37To48: z.number().int().min(0),
     leaner49Plus: z.number().int().min(0),
   }),
-  images: z.array(z.any()).optional(),
+  images: z.array(z.instanceof(File)), // Expect an array of File objects, make non-optional
 });
 
 /**
@@ -58,12 +64,14 @@ const createTicketSchema = z.object({
  * @route GET /api/tickets
  * @authentication Required
  */
-export const GET = authenticateRequest(async (
-  userId, 
-  request: Request
+// Updated to use withAuthentication and new handler signature
+export const GET = withAuthentication(async (
+  request: Request,
+  user: AuthenticatedUser // Use AuthenticatedUser context
 ) => {
   try {
-    return await handleGetTickets(userId, request);
+    // Pass user context (specifically user.uid) to the handler logic
+    return await handleGetTickets(user, request);
   } catch (error) {
     return handleApiError(error, 'Failed to fetch tickets');
   }
@@ -75,12 +83,14 @@ export const GET = authenticateRequest(async (
  * @route POST /api/tickets
  * @authentication Required
  */
-export const POST = authenticateRequest(async (
-  userId, 
-  request: Request
+// Updated to use withAuthentication and new handler signature
+export const POST = withAuthentication(async (
+  request: Request,
+  user: AuthenticatedUser // Use AuthenticatedUser context
 ) => {
   try {
-    return await handleCreateTicket(userId, request);
+    // Pass user context (specifically user.uid) to the handler logic
+    return await handleCreateTicket(user, request);
   } catch (error) {
     return handleApiError(error, 'Failed to create ticket');
   }
@@ -88,11 +98,11 @@ export const POST = authenticateRequest(async (
 
 /**
  * Handle GET request for tickets with filtering
- * @param userId - The authenticated user ID
+ * @param user - The authenticated user context
  * @param request - The HTTP request
  * @returns Response with tickets data
  */
-async function handleGetTickets(userId: string, request: Request) {
+async function handleGetTickets(user: AuthenticatedUser, request: Request) { // Updated signature
   // Parse URL parameters for filtering
   const url = new URL(request.url);
   const params = Object.fromEntries(url.searchParams.entries());
@@ -105,22 +115,42 @@ async function handleGetTickets(userId: string, request: Request) {
       limit: params.limit ? parseInt(params.limit) : undefined,
     });
     
+    const page = filters.page || 1;
+    const pageSize = filters.limit || 20;
+    
+    // Validate sortField before passing to service
+    const validSortFields: (keyof import('@/lib/services/ticketService').Ticket)[] = [
+      'id', 'userId', 'date', 'truckNumber', 'truckNickname', 'jobsite', 'jobsiteName',
+      'hangers', 'leaner6To12', 'leaner13To24', 'leaner25To36', 'leaner37To48',
+      'leaner49Plus', 'total', 'imageCount', 'submissionDate', 'archiveStatus', 'archiveDate'
+    ];
+    
+    let validatedSortField: keyof import('@/lib/services/ticketService').Ticket | undefined = undefined;
+    if (filters.sortField && validSortFields.includes(filters.sortField as any)) {
+      validatedSortField = filters.sortField as keyof import('@/lib/services/ticketService').Ticket;
+    }
+
     // Get tickets with filtering from ticket service
     const result = await ticketService.getTickets({
       ...filters,
-      // Include user ID to filter by user
-      userId,
+      sortField: validatedSortField, // Pass validated sortField
     });
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Tickets retrieved successfully',
-      count: result.tickets?.length || 0,
-      totalCount: result.totalCount,
-      page: filters.page || 1,
-      limit: filters.limit || 20,
-      tickets: result.tickets || []
-    });
+    // Calculate total pages
+    const totalPages = Math.ceil((result.total || 0) / pageSize); // Use 'total'
+    
+    // Return paginated response using utility function
+    return createPaginatedResponse(
+      'Tickets retrieved successfully',
+      result.tickets, // No need for || [] if service guarantees array
+      'tickets',
+      {
+        page: page,
+        pageSize: pageSize,
+        totalItems: result.total || 0, // Corrected property name
+        totalPages: totalPages
+      }
+    );
   } catch (validationError) {
     if (validationError instanceof z.ZodError) {
       throw new ValidationError(
@@ -140,11 +170,11 @@ async function handleGetTickets(userId: string, request: Request) {
 
 /**
  * Handle POST request for creating a ticket
- * @param userId - The authenticated user ID
+ * @param user - The authenticated user context
  * @param request - The HTTP request
  * @returns Response with created ticket data
  */
-async function handleCreateTicket(userId: string, request: Request) {
+async function handleCreateTicket(user: AuthenticatedUser, request: Request) { // Updated signature
   // Parse and validate request body
   const body = await request.json();
   
@@ -152,24 +182,26 @@ async function handleCreateTicket(userId: string, request: Request) {
     const data = createTicketSchema.parse(body);
     
     // Create ticket with validated data
-    const ticket = await ticketService.createTicket({
+    // Pass userId and data as separate arguments to createTicket
+    const ticket = await ticketService.createTicket(user.uid, {
       ...data,
-      userId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      status: 'submitted',
-      imageCount: data.images ? data.images.length : 0,
+      // createdAt, updatedAt, status, imageCount are likely handled within the service now
+      // Ensure CreateTicketData in service matches expected fields from 'data'
     });
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Ticket created successfully',
-      id: ticket.id || ticket.ticketId,
-      ticket: {
-        ...ticket,
-        id: ticket.id || ticket.ticketId
-      }
-    });
+    // Ensure id is consistent
+    const ticketWithId = {
+      ...ticket,
+      id: ticket.id // Use only 'id' property from Ticket type
+    };
+    
+    // Return success response using utility function
+    return createSuccessResponse(
+      'Ticket created successfully',
+      ticketWithId,
+      'ticket',
+      { status: 201 }
+    );
   } catch (validationError) {
     if (validationError instanceof z.ZodError) {
       throw new ValidationError(

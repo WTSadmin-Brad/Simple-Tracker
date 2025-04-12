@@ -13,6 +13,7 @@ import {
   validateRequest, 
   handleApiError 
 } from '@/lib/api/middleware';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
 import { getAuthAdmin, getFirestoreAdmin } from '@/lib/firebase/admin';
 import { fetchJobsiteById, jobsiteNameExists } from '../helpers';
 import { updateJobsiteSchema } from '@/lib/validation/jobsiteSchemas';
@@ -40,12 +41,12 @@ export const GET = authenticateRequest(async (userId, request, { params }: { par
     // 2. Use helper function to fetch jobsite by ID
     const jobsite = await fetchJobsiteById(id);
     
-    // 3. Return successful response
-    return NextResponse.json({
-      success: true,
-      message: 'Jobsite retrieved successfully',
-      ...jobsite
-    });
+    // 3. Return standardized response using utility function
+    return createSuccessResponse(
+      'Jobsite retrieved successfully',
+      jobsite,
+      'jobsite'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to retrieve jobsite details');
   }
@@ -87,13 +88,21 @@ export const PUT = authenticateRequest(async (userId, request, { params }: { par
       // This is a placeholder until implementation is completed
       const firestore = getFirestoreAdmin();
       
-      // 5. Return successful response
-      return NextResponse.json({
-        success: true,
-        message: 'Jobsite updated successfully',
+      // Create updated jobsite object
+      const updatedJobsite = {
+        ...jobsite,
+        ...data,
         id,
-        updatedAt: new Date().toISOString()
-      });
+        updatedAt: new Date().toISOString(),
+        updatedBy: userId
+      };
+      
+      // 5. Return standardized response using utility function
+      return createSuccessResponse(
+        'Jobsite updated successfully',
+        updatedJobsite,
+        'jobsite'
+      );
     } catch (error) {
       return handleApiError(error, 'Failed to update jobsite');
     }
@@ -126,13 +135,15 @@ export const DELETE = authenticateRequest(async (userId, request, { params }: { 
     // This is a placeholder until implementation is completed
     // Consider soft-delete by setting active=false instead
     
-    // 4. Return successful response
-    return NextResponse.json({
-      success: true,
-      message: 'Jobsite deleted successfully',
-      id,
-      deletedAt: new Date().toISOString()
-    });
+    // 4. Return standardized response using utility function
+    return createSuccessResponse(
+      'Jobsite deleted successfully',
+      {
+        id,
+        deletedAt: new Date().toISOString()
+      },
+      'jobsite'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to delete jobsite');
   }

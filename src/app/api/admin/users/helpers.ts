@@ -61,7 +61,7 @@ export interface Pagination {
 
 // User creation params
 export interface CreateUserParams {
-  email: string;
+  // email: string; // Removed: Placeholder email generated in createUserWithRole
   password: string;
   displayName: string;
   username: string;
@@ -172,7 +172,7 @@ export async function fetchUserByUsername(username: string): Promise<User | null
  */
 export async function createUser(params: CreateUserParams, createdBy: string): Promise<User> {
   try {
-    const { email, password, displayName, role, username, animationPrefs } = params;
+    const { password, displayName, role, username, animationPrefs } = params; // Removed email from destructuring
     
     // Check username uniqueness in Firestore
     if (await usernameExists(username)) {
@@ -180,8 +180,9 @@ export async function createUser(params: CreateUserParams, createdBy: string): P
     }
     
     // Create user with Firebase Admin SDK
+    // Call createUserWithRole with username (it handles placeholder email internally)
     const userRecord = await createUserWithRole(
-      email,
+      username, // Pass username instead of email
       password,
       displayName,
       role,
@@ -201,7 +202,7 @@ export async function createUser(params: CreateUserParams, createdBy: string): P
     // Return the newly created user
     return {
       username,
-      email,
+      // email: userRecord.email, // userRecord.email is the placeholder, might not be needed here
       displayName,
       role,
       uid: userRecord.uid,

@@ -9,7 +9,9 @@
  */
 
 import { NextResponse } from 'next/server';
-import { authenticateRequest, handleApiError } from '@/lib/api/middleware';
+import { withAdminRole, handleApiError } from '@/lib/api/middleware'; // Changed import
+import { AuthenticatedUser } from '@/types/api'; // Import AuthenticatedUser type
+import { createSuccessResponse, createPaginatedResponse } from '@/lib/api/responseUtils';
 import { getAuthAdmin, getFirestoreAdmin } from '@/lib/firebase/admin';
 import { 
   fetchUsers, 
@@ -25,14 +27,14 @@ import { z } from 'zod';
 
 // Schema for creating a new user
 const createUserSchema = z.object({
-  email: z.string().email({ message: "Invalid email format" }),
+  // email: z.string().email({ message: "Invalid email format" }), // Removed: Email is generated internally
   password: z.string().min(6, { message: "Password must be at least 6 characters" }),
   displayName: z.string().min(2, { message: "Display name must be at least 2 characters" }),
   username: z.string()
     .min(3, { message: "Username must be at least 3 characters" })
     .max(20, { message: "Username cannot exceed 20 characters" })
     .regex(/^[a-z0-9._-]+$/, { message: "Username can only contain lowercase letters, numbers, and ._-" }),
-  role: z.enum(["admin", "employee"], { 
+  role: z.enum(["admin", "employee"], {
     errorMap: () => ({ message: "Role must be either 'admin' or 'employee'" })
   }),
   animationPrefs: z.object({
@@ -73,12 +75,11 @@ const updateUserSchema = z.discriminatedUnion("action", [
  * @route GET /api/admin/users
  * @authentication Required with admin role
  */
-export const GET = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const GET = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
+    // Admin role is already verified by the wrapper
+    // Pass request to the handler logic
     return await handleGetUsers(request);
   } catch (error) {
     return handleApiError(error, 'Failed to retrieve users');
@@ -91,13 +92,12 @@ export const GET = authenticateRequest(async (userId, request) => {
  * @route POST /api/admin/users
  * @authentication Required with admin role
  */
-export const POST = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const POST = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleCreateUser(userId, request);
+    // Admin role is already verified by the wrapper
+    // Pass admin user ID and request to the handler logic
+    return await handleCreateUser(user.uid, request);
   } catch (error) {
     return handleApiError(error, 'Failed to create user');
   }
@@ -109,13 +109,12 @@ export const POST = authenticateRequest(async (userId, request) => {
  * @route PUT /api/admin/users
  * @authentication Required with admin role
  */
-export const PUT = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const PUT = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleUpdateUser(userId, request);
+    // Admin role is already verified by the wrapper
+    // Pass admin user ID and request to the handler logic
+    return await handleUpdateUser(user.uid, request);
   } catch (error) {
     return handleApiError(error, 'Failed to update user');
   }
@@ -127,42 +126,18 @@ export const PUT = authenticateRequest(async (userId, request) => {
  * @route DELETE /api/admin/users
  * @authentication Required with admin role
  */
-export const DELETE = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const DELETE = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleDeactivateUser(userId, request);
+    // Admin role is already verified by the wrapper
+    // Pass admin user ID and request to the handler logic
+    return await handleDeactivateUser(user.uid, request);
   } catch (error) {
     return handleApiError(error, 'Failed to deactivate user');
   }
 });
 
-/**
- * Verifies the user has admin role
- * @param userId User ID to verify
- * @throws ForbiddenError if user is not an admin
- */
-async function verifyAdminRole(userId: string) {
-  const auth = getAuthAdmin();
-  const user = await auth.getUser(userId);
-  
-  const customClaims = user.customClaims || {};
-  if (!customClaims.role || customClaims.role !== 'admin') {
-    throw new ForbiddenError(
-      'Admin access required',
-      ErrorCodes.AUTH_INSUFFICIENT_PERMISSIONS,
-      { 
-        requiredRole: 'admin',
-        userRole: customClaims.role || 'none'
-      }
-    );
-  }
-  
-  return user;
-}
-
+// Removed verifyAdminRole function as it's handled by the withAdminRole wrapper
 /**
  * Handle GET request for retrieving users
  * @param request - The HTTP request
@@ -186,13 +161,18 @@ async function handleGetUsers(request: Request) {
   // Use helper function to fetch users with filtering
   const { users, pagination } = await fetchUsers(filters);
   
-  return NextResponse.json({
-    success: true,
-    message: 'Users retrieved successfully',
-    count: users.length,
+  // Return standardized response using utility function
+  return createPaginatedResponse(
+    'Users retrieved successfully',
     users,
-    pagination
-  });
+    'users',
+    {
+      page: pagination.page || 1,
+      pageSize: pagination.pageSize || 10,
+      totalItems: pagination.total || 0, // Correct property name is 'total'
+      totalPages: pagination.totalPages || 1
+    }
+  );
 }
 
 /**
@@ -213,29 +193,36 @@ async function handleCreateUser(adminUserId: string, request: Request) {
     if (await usernameExists(validatedData.username)) {
       throw new ValidationError(
         'Username already exists',
-        ErrorCodes.VALIDATION_DUPLICATE_ENTRY,
-        409,
-        { field: 'username', value: validatedData.username }
+        ErrorCodes.DATA_ALREADY_EXISTS, // Correct Error Code
+        409, // Status Code
+        { field: 'username', value: validatedData.username } // Details object
       );
     }
     
     // Use helper to create new user with Firebase Admin SDK
+    // Prepare parameters for the createUser helper (email is handled internally now)
     const userParams: CreateUserParams = {
-      email: validatedData.email,
+      // email: validatedData.email, // Removed
       password: validatedData.password,
       displayName: validatedData.displayName,
       username: validatedData.username,
       role: validatedData.role,
-      animationPrefs: validatedData.animationPrefs
+      // Provide default values for animationPrefs if not fully defined
+      animationPrefs: {
+        reducedMotion: validatedData.animationPrefs?.reducedMotion ?? false,
+        hapticFeedback: validatedData.animationPrefs?.hapticFeedback ?? true,
+      }
     };
     
     const newUser = await createUser(userParams, adminUserId);
     
-    return NextResponse.json({
-      success: true,
-      message: 'User created successfully',
-      user: newUser
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'User created successfully',
+      newUser,
+      'user',
+      { status: 201 }
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       throw new ValidationError(
@@ -255,9 +242,9 @@ async function handleCreateUser(adminUserId: string, request: Request) {
       if (error.message.includes('email-already-exists')) {
         throw new ValidationError(
           'Email already exists',
-          ErrorCodes.VALIDATION_DUPLICATE_ENTRY,
-          409,
-          { field: 'email' }
+          ErrorCodes.DATA_ALREADY_EXISTS, // Correct Error Code
+          409, // Status Code
+          { field: 'email' } // Details object
         );
       }
       
@@ -296,22 +283,24 @@ async function handleUpdateUser(adminUserId: string, request: Request) {
         const { role } = validatedData.data;
         const updatedUser = await changeUserRole(uid, role, adminUserId);
         
-        return NextResponse.json({
-          success: true,
-          message: `User role updated to ${role}`,
-          user: updatedUser
-        });
+        // Return standardized response using utility function
+        return createSuccessResponse(
+          `User role updated to ${role}`,
+          updatedUser,
+          'user'
+        );
       }
       
       case 'setActiveStatus': {
         const { isActive } = validatedData.data;
         const statusUser = await setUserActiveStatus(uid, isActive, adminUserId);
         
-        return NextResponse.json({
-          success: true,
-          message: isActive ? 'User activated' : 'User deactivated',
-          user: statusUser
-        });
+        // Return standardized response using utility function
+        return createSuccessResponse(
+          isActive ? 'User activated' : 'User deactivated',
+          statusUser,
+          'user'
+        );
       }
     }
   } catch (error) {
@@ -355,20 +344,22 @@ async function handleDeactivateUser(adminUserId: string, request: Request) {
     // We don't actually delete users, we deactivate them
     const deactivatedUser = await setUserActiveStatus(uid, false, adminUserId);
     
-    return NextResponse.json({
-      success: true,
-      message: 'User deactivated successfully',
-      user: {
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'User deactivated successfully',
+      {
         uid,
         deactivatedAt: new Date().toISOString()
-      }
-    });
+      },
+      'user'
+    );
   } catch (error) {
     if (error instanceof Error && error.message.includes('user-not-found')) {
       throw new NotFoundError(
         'User not found',
-        ErrorCodes.RESOURCE_NOT_FOUND,
-        { resourceType: 'user', id: uid }
+        ErrorCodes.DATA_NOT_FOUND, // Correct Error Code
+        404, // Status Code
+        { resourceType: 'user', id: uid } // Details object (4th argument)
       );
     }
     

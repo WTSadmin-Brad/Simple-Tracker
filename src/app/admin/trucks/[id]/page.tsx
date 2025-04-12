@@ -14,11 +14,7 @@ import { truckDetailFields, truckDetailTabs } from '@/components/feature/admin/c
 import { getTruckById } from '@/lib/services/truckService';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export const metadata: Metadata = {
-  title: 'Truck Details | Admin | Simple Tracker',
-  description: 'View detailed truck information',
-};
-
+// Removed static metadata export, using generateMetadata instead
 // Generate dynamic metadata based on truck ID
 export async function generateMetadata({ params }: { params: { id: string } }) {
   return {
@@ -40,7 +36,7 @@ export default async function TruckDetailPage({ params }: { params: { id: string
   return (
     <div className="container mx-auto px-4 py-8">
       <AdminHeader 
-        title={`Truck: ${truck.number}`} 
+        title={`Truck: ${truck.truckNumber}`}
         backLink="/admin/trucks"
       />
       
@@ -49,11 +45,10 @@ export default async function TruckDetailPage({ params }: { params: { id: string
           <EntityDetailView
             entityId={id}
             entityType="Truck"
-            title={`Truck: ${truck.number}`}
-            description={`Type: ${truck.type}`}
+            title={`Truck: ${truck.truckNumber}`}
+            description={`Status: ${truck.status}`} // Changed description to use 'status' instead of non-existent 'type'
             backLink="/admin/trucks"
-            detailFields={truckDetailFields}
-            tabs={truckDetailTabs}
+            sections={[{ title: 'Details', fields: truckDetailFields }]} // Wrap fields, rename prop, remove tabs
             fetchEntity={getTruckById}
           />
         </Suspense>

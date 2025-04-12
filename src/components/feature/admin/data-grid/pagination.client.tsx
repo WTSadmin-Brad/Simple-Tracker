@@ -8,8 +8,8 @@
  */
 
 import { useMemo, useCallback } from 'react';
-import { Button } from '@/components/ui/button.client';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.client';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

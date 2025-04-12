@@ -18,7 +18,13 @@ import { Ticket, TicketFilterParams, WizardData } from '@/types/tickets';
 export function useGetTickets(filters: TicketFilterParams = {}) {
   return useQuery({
     queryKey: queryKeys.tickets.list(filters),
-    queryFn: () => ticketService.getTickets(filters),
+    queryFn: async () => {
+      const response = await ticketService.getTickets(filters);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.tickets; // Use specific 'tickets' property instead of generic 'data'
+    },
   });
 }
 
@@ -28,7 +34,13 @@ export function useGetTickets(filters: TicketFilterParams = {}) {
 export function useGetTicketById(id: string | null) {
   return useQuery({
     queryKey: queryKeys.tickets.detail(id || ''),
-    queryFn: () => ticketService.getTicketById(id || ''),
+    queryFn: async () => {
+      const response = await ticketService.getTicketById(id || '');
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.ticket; // Use specific 'ticket' property instead of generic 'data'
+    },
     enabled: !!id, // Only run the query if an ID is provided
   });
 }
@@ -39,7 +51,13 @@ export function useGetTicketById(id: string | null) {
 export function useGetUserTickets(userId: string, startDate: string, endDate: string) {
   return useQuery({
     queryKey: [...queryKeys.tickets.lists(), userId, startDate, endDate],
-    queryFn: () => ticketService.fetchUserTickets(userId, startDate, endDate),
+    queryFn: async () => {
+      const response = await ticketService.fetchUserTickets(userId, startDate, endDate);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.tickets; // Use specific 'tickets' property instead of generic 'data'
+    },
     enabled: !!userId && !!startDate && !!endDate,
   });
 }
@@ -54,7 +72,9 @@ export function useCreateTicket() {
   return useMutation({
     mutationFn: (data: { userId: string, ticketData: WizardData }) => 
       ticketService.createTicket(data.userId, data.ticketData),
-    onSuccess: () => {
+    onSuccess: (response) => {
+      if (!response.success) return;
+      
       toast({ title: "Ticket created successfully" });
       queryClient.invalidateQueries({ queryKey: queryKeys.tickets.lists() });
     },
@@ -80,7 +100,11 @@ export function useUpdateTicket() {
   return useMutation({
     mutationFn: (data: { ticketId: string, userId: string, ticketData: any }) => 
       ticketService.updateTicket(data.ticketId, data.userId, data.ticketData),
-    onSuccess: (updatedTicket) => {
+    onSuccess: (response) => {
+      if (!response.success) return;
+      
+      const updatedTicket = response.ticket; // Use specific 'ticket' property
+      
       toast({ title: "Ticket updated successfully" });
       
       // Update specific ticket in cache
@@ -117,8 +141,10 @@ export function useUpdateTicketStatus() {
       id: string, 
       status: 'active' | 'images_archived' | 'fully_archived' 
     }) => ticketService.updateTicketStatus(data.id, data.status),
-    onSuccess: (updatedTicket) => {
-      if (!updatedTicket) return;
+    onSuccess: (response) => {
+      if (!response.success) return;
+      
+      const updatedTicket = response.ticket; // Use specific 'ticket' property
       
       toast({ title: "Ticket status updated successfully" });
       
@@ -153,8 +179,10 @@ export function useArchiveTicketImages() {
   
   return useMutation({
     mutationFn: (ticketId: string) => ticketService.archiveTicketImages(ticketId),
-    onSuccess: (updatedTicket) => {
-      if (!updatedTicket) return;
+    onSuccess: (response) => {
+      if (!response.success) return;
+      
+      const updatedTicket = response.ticket; // Use specific 'ticket' property
       
       toast({ title: "Ticket images archived successfully" });
       
@@ -189,8 +217,10 @@ export function useFullyArchiveTicket() {
   
   return useMutation({
     mutationFn: (ticketId: string) => ticketService.fullyArchiveTicket(ticketId),
-    onSuccess: (updatedTicket) => {
-      if (!updatedTicket) return;
+    onSuccess: (response) => {
+      if (!response.success) return;
+      
+      const updatedTicket = response.ticket; // Use specific 'ticket' property
       
       toast({ title: "Ticket fully archived successfully" });
       
@@ -225,8 +255,10 @@ export function useRestoreTicket() {
   
   return useMutation({
     mutationFn: (ticketId: string) => ticketService.restoreTicket(ticketId),
-    onSuccess: (updatedTicket) => {
-      if (!updatedTicket) return;
+    onSuccess: (response) => {
+      if (!response.success) return;
+      
+      const updatedTicket = response.ticket; // Use specific 'ticket' property
       
       toast({ title: "Ticket restored successfully" });
       

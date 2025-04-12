@@ -1,84 +1,47 @@
 /**
  * Workday API client functions
- * 
- * @source directory-structure.md - "API client functions" section
- * @source Employee_Flows.md - "Workday Logging Flow" section
  */
 
-import { ApiResponse, PaginatedResponse } from '../../types/api';
-import { Workday, WorkdayType, WorkdayWithTickets } from '../../types/workday';
+import { apiRequest } from './apiClient';
+import { StandardResponse } from './apiClient';
+import { Workday, WorkdayType, WorkdayWithTickets } from '@/types/workday';
+import { WorkdayResponse, WorkdaysResponse } from '@/types/api';
+import { ErrorCodes } from '@/lib/errors/error-types';
 
 /**
- * Base URL for workday API endpoints
+ * API endpoints for workday operations
  */
-const WORKDAY_API_BASE = '/api/workdays';
+const ENDPOINTS = {
+  WORKDAYS: '/api/workdays',
+  WORKDAY: (id: string) => `/api/workdays/${id}`,
+  WORKDAY_DATE: (date: string) => `/api/workdays/date/${date}`,
+  WORKDAY_MONTH: (year: number, month: number) => `/api/workdays/month/${year}/${month}`,
+};
 
 /**
  * Get workdays for a specific month
  * 
  * @param year - Year to fetch workdays for
  * @param month - Month to fetch workdays for (0-11)
- * @returns Promise with workday data
+ * @returns Promise with standardized response containing workday data
  */
 export async function getMonthWorkdays(
   year: number,
   month: number
-): Promise<ApiResponse<Workday[]>> {
-  try {
-    const response = await fetch(
-      `${WORKDAY_API_BASE}?year=${year}&month=${month}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch workdays');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch workdays'
-    };
-  }
+): Promise<StandardResponse<WorkdaysResponse>> {
+  return apiRequest<WorkdaysResponse>(ENDPOINTS.WORKDAY_MONTH(year, month));
 }
 
 /**
  * Get workday details for a specific date
  * 
  * @param date - ISO date string
- * @returns Promise with workday details including ticket summary if available
+ * @returns Promise with standardized response containing workday details
  */
 export async function getWorkdayDetails(
   date: string
-): Promise<ApiResponse<WorkdayWithTickets>> {
-  try {
-    const response = await fetch(
-      `${WORKDAY_API_BASE}/${date}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch workday details');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch workday details'
-    };
-  }
+): Promise<StandardResponse<WorkdayResponse>> {
+  return apiRequest<WorkdayResponse>(ENDPOINTS.WORKDAY_DATE(date));
 }
 
 /**
@@ -87,40 +50,21 @@ export async function getWorkdayDetails(
  * @param date - ISO date string
  * @param jobsite - Jobsite ID
  * @param workType - Work type (full, half, off)
- * @returns Promise with created workday data
+ * @returns Promise with standardized response containing created workday
  */
 export async function createWorkday(
   date: string,
   jobsite: string,
   workType: WorkdayType
-): Promise<ApiResponse<Workday>> {
-  try {
-    const response = await fetch(
-      WORKDAY_API_BASE,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          date,
-          jobsite,
-          workType
-        })
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to create workday');
+): Promise<StandardResponse<WorkdayResponse>> {
+  return apiRequest<WorkdayResponse>(ENDPOINTS.WORKDAYS, {
+    method: 'POST',
+    body: {
+      date,
+      jobsite,
+      workType
     }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to create workday'
-    };
-  }
+  });
 }
 
 /**
@@ -129,37 +73,32 @@ export async function createWorkday(
  * @param id - Workday ID
  * @param jobsite - Jobsite ID
  * @param workType - Work type (full, half, off)
- * @returns Promise with updated workday data
+ * @returns Promise with standardized response containing updated workday
  */
 export async function updateWorkday(
   id: string,
   jobsite: string,
   workType: WorkdayType
-): Promise<ApiResponse<Workday>> {
-  try {
-    const response = await fetch(
-      `${WORKDAY_API_BASE}/${id}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          jobsite,
-          workType
-        })
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to update workday');
+): Promise<StandardResponse<WorkdayResponse>> {
+  return apiRequest<WorkdayResponse>(ENDPOINTS.WORKDAY(id), {
+    method: 'PUT',
+    body: {
+      jobsite,
+      workType
     }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to update workday'
-    };
-  }
+  });
+}
+
+/**
+ * Delete a workday entry
+ * 
+ * @param id - Workday ID
+ * @returns Promise with standardized response
+ */
+export async function deleteWorkday(
+  id: string
+): Promise<StandardResponse> {
+  return apiRequest(ENDPOINTS.WORKDAY(id), {
+    method: 'DELETE'
+  });
 }

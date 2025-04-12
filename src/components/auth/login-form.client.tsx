@@ -14,18 +14,20 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useAuthStore } from '@/stores/authStore';
+// Removed direct store import for actions, will use useAuth hook
+// import { useAuthStore } from '@/stores/authStore';
+import { useAuth } from '@/hooks/useAuth'; // Import useAuth hook
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+// Removed unused Checkbox import
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 // Define form schema with Zod
 const loginSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
+  username: z.string().min(3, 'Username must be at least 3 characters'), // Changed from email
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  rememberMe: z.boolean().optional(),
+  // Removed rememberMe
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -36,7 +38,9 @@ export default function LoginForm() {
   const returnUrl = searchParams.get('returnUrl') || '';
   
   // Use the Zustand auth store
-  const { login, isLoading, error, clearError, isAuthenticated, user } = useAuthStore();
+  // Use the useAuth hook to get state and actions
+  const { login, isLoading, error, isAuthenticated, user } = useAuth();
+  // Removed clearError as it's not directly exposed by useAuth anymore
   
   // Initialize React Hook Form with Zod validation
   const {
@@ -46,9 +50,9 @@ export default function LoginForm() {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: '',
+      username: '', // Changed from email
       password: '',
-      rememberMe: false,
+      // Removed rememberMe
     },
   });
   
@@ -62,7 +66,8 @@ export default function LoginForm() {
   
   const onSubmit = async (data: LoginFormValues) => {
     try {
-      await login(data.email, data.password, data.rememberMe);
+      // Call login from useAuth hook with username and password
+      await login(data.username, data.password);
       // Successful login will trigger the useEffect above for redirection
     } catch (err) {
       // Error is already handled in the auth store
@@ -80,17 +85,17 @@ export default function LoginForm() {
         )}
         
         <div className="space-y-2">
-          <Label htmlFor="email">Email address</Label>
+          <Label htmlFor="username">Username</Label>
           <Input
-            id="email"
-            type="email"
-            autoComplete="email"
+            id="username"
+            type="text" // Changed type to text
+            autoComplete="username" // Changed autocomplete
             disabled={isLoading}
-            {...register('email')}
-            aria-invalid={errors.email ? 'true' : 'false'}
+            {...register('username')} // Register username field
+            aria-invalid={errors.username ? 'true' : 'false'} // Check username errors
           />
-          {errors.email && (
-            <p className="text-sm text-red-500">{errors.email.message}</p>
+          {errors.username && ( // Check username errors
+            <p className="text-sm text-red-500">{errors.username.message}</p>
           )}
         </div>
         
@@ -109,18 +114,7 @@ export default function LoginForm() {
           )}
         </div>
         
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="rememberMe"
-              disabled={isLoading}
-              {...register('rememberMe')}
-            />
-            <Label htmlFor="rememberMe" className="text-sm font-normal">
-              Remember me
-            </Label>
-          </div>
-        </div>
+        {/* Removed Remember Me checkbox */}
         
         <Button
           type="submit"

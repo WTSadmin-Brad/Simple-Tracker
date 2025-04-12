@@ -21,7 +21,7 @@ import UsersDataGrid from './_components/users-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'User Management | Admin | Simple Tracker',
-  description: 'Manage and review all user accounts',
+  description: 'Manage and review all user accounts'
 };
 
 export default async function AdminUsersPage({

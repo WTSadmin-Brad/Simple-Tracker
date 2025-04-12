@@ -11,7 +11,7 @@ import { ArchiveManagerClient } from './_components/archive-manager-client';
 
 export const metadata: Metadata = {
   title: 'Archive Management | Admin | Simple Tracker',
-  description: 'Search and manage archived tickets and data',
+  description: 'Search and manage archived tickets and data'
 };
 
 export default function ArchiveManagementPage() {

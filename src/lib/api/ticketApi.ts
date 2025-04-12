@@ -3,9 +3,9 @@
  * Provides a clean interface for ticket-related API operations
  */
 
-import { apiRequest, apiFormRequest } from './apiClient';
-import { ApiResponse } from '@/types/api';
+import { apiRequest, apiFormRequest, StandardResponse } from './apiClient';
 import { Ticket, WizardData, WizardStep1Data, WizardStep2Data, WizardStep3Data, TempImageUploadResponse, TicketFilterParams } from '@/types/tickets';
+import { TicketResponse, TicketsResponse, WizardStepResponse } from '@/types/api';
 
 /**
  * API endpoints for ticket operations
@@ -26,11 +26,11 @@ const ENDPOINTS = {
  * Submit a complete ticket
  * 
  * @param wizardData - Complete wizard data with all steps
- * @returns Promise with submitted ticket data
+ * @returns Promise with standardized response containing submitted ticket
  */
 export async function submitTicket(
   wizardData: WizardData
-): Promise<ApiResponse<Ticket>> {
+): Promise<StandardResponse<Ticket>> {
   return apiRequest<Ticket>(ENDPOINTS.WIZARD_COMPLETE, {
     method: 'POST',
     body: wizardData
@@ -41,12 +41,12 @@ export async function submitTicket(
  * Save wizard step 1 data (Basic Info)
  * 
  * @param data - Step 1 data (date, truck, jobsite)
- * @returns Promise with success status
+ * @returns Promise with standardized response
  */
 export async function saveWizardStep1(
   data: WizardStep1Data
-): Promise<ApiResponse<void>> {
-  return apiRequest<void>(ENDPOINTS.WIZARD_STEP1, {
+): Promise<StandardResponse<WizardStepResponse>> {
+  return apiRequest<WizardStepResponse>(ENDPOINTS.WIZARD_STEP1, {
     method: 'POST',
     body: data
   });
@@ -56,12 +56,12 @@ export async function saveWizardStep1(
  * Save wizard step 2 data (Categories)
  * 
  * @param data - Step 2 data (categories with counts)
- * @returns Promise with success status
+ * @returns Promise with standardized response
  */
 export async function saveWizardStep2(
   data: WizardStep2Data
-): Promise<ApiResponse<void>> {
-  return apiRequest<void>(ENDPOINTS.WIZARD_STEP2, {
+): Promise<StandardResponse<WizardStepResponse>> {
+  return apiRequest<WizardStepResponse>(ENDPOINTS.WIZARD_STEP2, {
     method: 'POST',
     body: data
   });
@@ -71,12 +71,12 @@ export async function saveWizardStep2(
  * Save wizard step 3 data (Image Upload)
  * 
  * @param data - Step 3 data (image references)
- * @returns Promise with success status
+ * @returns Promise with standardized response
  */
 export async function saveWizardStep3(
   data: WizardStep3Data
-): Promise<ApiResponse<void>> {
-  return apiRequest<void>(ENDPOINTS.WIZARD_STEP3, {
+): Promise<StandardResponse<WizardStepResponse>> {
+  return apiRequest<WizardStepResponse>(ENDPOINTS.WIZARD_STEP3, {
     method: 'POST',
     body: data
   });
@@ -85,9 +85,9 @@ export async function saveWizardStep3(
 /**
  * Get saved wizard data
  * 
- * @returns Promise with saved wizard data or null if no data exists
+ * @returns Promise with standardized response containing wizard data
  */
-export async function getWizardData(): Promise<ApiResponse<WizardData>> {
+export async function getWizardData(): Promise<StandardResponse<WizardData>> {
   return apiRequest<WizardData>(ENDPOINTS.WIZARD);
 }
 
@@ -95,11 +95,11 @@ export async function getWizardData(): Promise<ApiResponse<WizardData>> {
  * Upload a temporary image for the wizard
  * 
  * @param file - Image file to upload
- * @returns Promise with temporary image data
+ * @returns Promise with standardized response containing temporary image data
  */
 export async function uploadTempImage(
   file: File
-): Promise<ApiResponse<TempImageUploadResponse>> {
+): Promise<StandardResponse<TempImageUploadResponse>> {
   const formData = new FormData();
   formData.append('image', file);
   
@@ -110,12 +110,12 @@ export async function uploadTempImage(
  * Delete a temporary image
  * 
  * @param tempId - Temporary image ID
- * @returns Promise with success status
+ * @returns Promise with standardized response
  */
 export async function deleteTempImage(
   tempId: string
-): Promise<ApiResponse<void>> {
-  return apiRequest<void>(ENDPOINTS.TEMP_IMAGE(tempId), {
+): Promise<StandardResponse> {
+  return apiRequest(ENDPOINTS.TEMP_IMAGE(tempId), {
     method: 'DELETE'
   });
 }
@@ -124,12 +124,12 @@ export async function deleteTempImage(
  * Get tickets with optional filtering
  * 
  * @param filters - Optional filters for tickets
- * @returns Promise with list of tickets
+ * @returns Promise with standardized response containing list of tickets
  */
 export async function getTickets(
   filters: TicketFilterParams = {}
-): Promise<ApiResponse<Ticket[]>> {
-  return apiRequest<Ticket[]>(ENDPOINTS.TICKETS, {
+): Promise<StandardResponse<TicketsResponse>> {
+  return apiRequest<TicketsResponse>(ENDPOINTS.TICKETS, {
     params: filters as any
   });
 }
@@ -138,10 +138,10 @@ export async function getTickets(
  * Get a single ticket by ID
  * 
  * @param id - Ticket ID
- * @returns Promise with ticket data
+ * @returns Promise with standardized response containing ticket data
  */
 export async function getTicketById(
   id: string
-): Promise<ApiResponse<Ticket>> {
-  return apiRequest<Ticket>(ENDPOINTS.TICKET(id));
+): Promise<StandardResponse<TicketResponse>> {
+  return apiRequest<TicketResponse>(ENDPOINTS.TICKET(id));
 }

@@ -14,11 +14,7 @@ import { jobsiteDetailFields, jobsiteDetailTabs } from '@/components/feature/adm
 import { getJobsiteById } from '@/lib/services/jobsiteService';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export const metadata: Metadata = {
-  title: 'Jobsite Details | Admin | Simple Tracker',
-  description: 'View detailed jobsite information',
-};
-
+// Removed static metadata export, using generateMetadata instead
 // Generate dynamic metadata based on jobsite ID
 export async function generateMetadata({ params }: { params: { id: string } }) {
   return {
@@ -52,8 +48,7 @@ export default async function JobsiteDetailPage({ params }: { params: { id: stri
             title={`Jobsite: ${jobsite.name}`}
             description={`Location: ${jobsite.location}`}
             backLink="/admin/jobsites"
-            detailFields={jobsiteDetailFields}
-            tabs={jobsiteDetailTabs}
+            sections={jobsiteDetailFields} // Renamed from detailFields, removed tabs prop
             fetchEntity={getJobsiteById}
           />
         </Suspense>

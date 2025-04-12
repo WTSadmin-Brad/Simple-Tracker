@@ -9,7 +9,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
@@ -21,7 +21,6 @@ import { z } from 'zod';
 export type { ExportResult } from './export-results';
 
 export function ExportManagerClient() {
-  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('create');
   const [exports, setExports] = useState<ExportResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,10 +83,8 @@ export function ExportManagerClient() {
       }
       
       // Show success toast
-      toast({
-        title: 'Export Created',
+      toast('Export Created', {
         description: `Your ${formData.type} export has been created and is ready for download.`,
-        variant: 'default',
       });
       
       // Refresh exports list and switch to results tab
@@ -117,20 +114,16 @@ export function ExportManagerClient() {
       }
       
       // Show success toast
-      toast({
-        title: 'Export Deleted',
+      toast('Export Deleted', {
         description: 'The export has been successfully deleted.',
-        variant: 'default',
       });
       
       // Refresh exports list
       await fetchExports();
     } catch (err) {
       // Show error toast
-      toast({
-        title: 'Delete Failed',
+      toast.error('Delete Failed', {
         description: err instanceof Error ? err.message : 'An unknown error occurred',
-        variant: 'destructive',
       });
     }
   };

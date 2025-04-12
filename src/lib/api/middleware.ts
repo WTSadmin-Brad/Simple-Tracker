@@ -6,8 +6,13 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { verifyIdToken } from '../firebase/admin';
-import { ValidationError } from '../../types/errors';
-import { ErrorCodes } from '../../types/errorCodes';
+import { 
+  AppError, 
+  ValidationError, 
+  ErrorCodes 
+} from '../errors/error-types';
+import { createErrorResponse } from './responseUtils';
+import { AuthenticatedUser } from '@/types/api'; // Import the new type
 
 /**
  * Validates request body against a Zod schema
@@ -33,14 +38,12 @@ export function validateRequest<T>(
         // Log validation errors
         console.warn('Validation failed:', formattedErrors);
         
-        // Return validation errors
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Validation failed',
-            errors: formattedErrors
-          },
-          { status: 400 }
+        // Return validation errors using the utility function
+        return createErrorResponse(
+          'Validation failed',
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400,
+          formattedErrors
         );
       }
       
@@ -50,26 +53,16 @@ export function validateRequest<T>(
       // Handle JSON parsing errors
       if (error instanceof SyntaxError) {
         console.error('JSON parsing error:', error.message);
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Invalid JSON in request body',
-            detail: error.message
-          },
-          { status: 400 }
+        return createErrorResponse(
+          'Invalid JSON in request body',
+          ErrorCodes.VALIDATION_INVALID_FORMAT,
+          400,
+          error.message
         );
       }
       
       // Handle other errors
-      console.error('Request validation error:', error);
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'An error occurred while processing your request',
-          error: error instanceof Error ? error.message : String(error)
-        },
-        { status: 500 }
-      );
+      return handleApiError(error, 'Request validation error');
     }
   };
 }
@@ -108,24 +101,34 @@ export function handleApiError(error: unknown, customMessage?: string): NextResp
     } : String(error)
   });
   
-  // Determine appropriate error message
-  const message = customMessage || 'An error occurred while processing your request';
+  // Determine status and code based on error type
+  let status = 500;
+  let code = ErrorCodes.UNKNOWN_ERROR;
+  let details: any = undefined;
+  let message = customMessage || 'An unknown error occurred';
   
-  // Determine if this is a client error (4xx) or server error (5xx)
-  const isClientError = error instanceof Error && 
-    (error.name === 'ValidationError' || error.name === 'BadRequestError');
+  // Extract error information based on error type
+  if (error instanceof AppError) {
+    status = error.status || 500;
+    code = error.code;
+    details = error.details;
+    message = customMessage || error.message;
+  } else if (error instanceof Error) {
+    // Handle standard Error objects
+    if (error.name === 'ValidationError' || error.name === 'BadRequestError') {
+      status = 400;
+      code = ErrorCodes.VALIDATION_INVALID_INPUT;
+    }
+    message = customMessage || error.message;
+  }
   
-  // Return error response
-  return NextResponse.json(
-    {
-      success: false,
-      message,
-      error: process.env.NODE_ENV === 'development' 
-        ? (error instanceof Error ? error.message : String(error))
-        : undefined
-    },
-    { status: isClientError ? 400 : 500 }
-  );
+  // Include details in development but not production
+  if (process.env.NODE_ENV !== 'development') {
+    details = undefined;
+  }
+  
+  // Return standardized error response using the utility function
+  return createErrorResponse(message, code, status, details);
 }
 
 /**
@@ -135,8 +138,10 @@ export function handleApiError(error: unknown, customMessage?: string): NextResp
  * @param handler Request handler function to call if authentication passes
  * @returns A handler function that includes authentication
  */
-export function authenticateRequest<T>(
-  handler: (userId: string, request: Request) => Promise<NextResponse<T>>
+// Renaming for clarity and updated signature
+export function withAuthentication<T>(
+  // Handler now receives the full AuthenticatedUser object
+  handler: (request: Request, user: AuthenticatedUser) => Promise<NextResponse<T>>
 ) {
   return async (request: Request) => {
     try {
@@ -144,38 +149,47 @@ export function authenticateRequest<T>(
       const authHeader = request.headers.get('authorization');
       
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Authentication required',
-            error: {
-              code: ErrorCodes.AUTH_REQUIRED
-            }
-          },
-          { status: 401 }
+        return createErrorResponse(
+          'Authentication required',
+          ErrorCodes.AUTH_INVALID_TOKEN,
+          401
         );
       }
       
       const token = authHeader.split('Bearer ')[1];
       
       try {
-        // Verify token and get user ID
+        // Verify token using the updated function (checks revocation)
         const decodedToken = await verifyIdToken(token);
-        const userId = decodedToken.uid;
         
-        // Call handler with validated userId
-        return handler(userId, request);
-      } catch (error) {
-        console.error('Auth error:', error);
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Invalid authentication token',
-            error: {
-              code: ErrorCodes.AUTH_INVALID_TOKEN
-            }
-          },
-          { status: 401 }
+        // Extract UID and Role from verified claims
+        const uid = decodedToken.uid;
+        // Roles are typically stored in custom claims. Adjust if stored differently.
+        const role = decodedToken.role || 'employee'; // Default to 'employee' if role claim is missing
+
+        if (!uid) {
+           console.error('Auth error: UID missing from decoded token', decodedToken);
+           return createErrorResponse('Invalid authentication token: Missing user identifier.', ErrorCodes.AUTH_INVALID_TOKEN, 401);
+        }
+
+        // Construct the AuthenticatedUser object
+        const user: AuthenticatedUser = {
+          uid,
+          role
+        };
+
+        
+        // Call the original handler with the request and the authenticated user context
+        return handler(request, user);
+
+      } catch (error: any) {
+        // Log the specific error from verifyIdToken
+        console.error('Authentication error during token verification:', error.message || error);
+        // Use the error message from verifyIdToken which might be more specific (e.g., revoked, expired)
+        return createErrorResponse(
+          error.message || 'Invalid authentication token',
+          ErrorCodes.AUTH_INVALID_TOKEN, // Keep generic code for client handling simplicity? Or map specific codes?
+          401
         );
       }
     } catch (error) {
@@ -183,4 +197,28 @@ export function authenticateRequest<T>(
       return handleApiError(error, 'Authentication failed');
     }
   };
+}
+/**
+ * Authenticates a request and ensures the user has the 'admin' role.
+ * Uses withAuthentication internally.
+ *
+ * @param handler Request handler function to call if authentication and authorization pass
+ * @returns A handler function that includes authentication and admin role check
+ */
+export function withAdminRole<T>(
+  handler: (request: Request, user: AuthenticatedUser) => Promise<NextResponse<T>>
+) {
+  return withAuthentication(async (request, user) => {
+    // Check for admin role from the verified user context
+    if (user.role !== 'admin') {
+      console.warn(`Forbidden access attempt: User ${user.uid} with role ${user.role} tried to access admin route.`);
+      return createErrorResponse(
+        'Forbidden: Admin role required',
+        ErrorCodes.AUTH_FORBIDDEN,
+        403
+      );
+    }
+    // If role is admin, proceed with the original handler
+    return handler(request, user);
+  });
 }

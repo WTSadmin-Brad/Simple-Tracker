@@ -7,7 +7,7 @@
 
 import { motion } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
-import { WizardStep } from './WizardContainer.client';
+import { WizardStep } from './WizardContainer';
 import { Loader2 } from 'lucide-react';
 
 type WizardNavigationProps = {

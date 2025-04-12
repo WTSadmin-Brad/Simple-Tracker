@@ -85,7 +85,7 @@ The application uses a centralized API client in `apiClient.ts` that provides:
 export async function apiRequest<T>(
   endpoint: string, 
   options?: RequestOptions
-): Promise<ApiResponse<T>> {
+): Promise<StandardResponse<T>> {
   try {
     // Build request configuration
     const config: RequestInit = {
@@ -98,27 +98,52 @@ export async function apiRequest<T>(
     };
 
     // Add body if provided
-    if (options?.data) {
-      config.body = JSON.stringify(options.data);
+    if (options?.body) {
+      config.body = JSON.stringify(options.body);
     }
 
     // Execute request with error handling
     const response = await fetch(url, config);
-    const data = await response.json();
     
-    return {
-      ...data,
-      status: response.status
-    };
+    // Parse response as JSON
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      
+      // Our API now standardizes all responses, so we can just return the data
+      return data;
+    } else {
+      // Handle non-JSON responses
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Request failed with status ${response.status}`,
+          error: {
+            code: ErrorCodes.NETWORK_SERVER_ERROR,
+            status: response.status,
+          },
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // For successful non-JSON responses
+      return {
+        success: true,
+        message: 'Resource retrieved successfully',
+        rawData: await response.text(), // Store raw text data
+        timestamp: new Date().toISOString()
+      };
+    }
   } catch (error) {
+    // Handle network or other errors
     return {
       success: false,
+      message: error instanceof Error ? error.message : 'Network error occurred',
       error: {
-        message: error.message || 'Unknown error occurred',
-        code: 'NETWORK_ERROR',
-        status: 0
+        code: ErrorCodes.NETWORK_OFFLINE,
+        status: 0,
+        details: error instanceof Error ? { name: error.name } : undefined
       },
-      isNetworkError: true,
       timestamp: new Date().toISOString()
     };
   }
@@ -138,20 +163,20 @@ export const ENDPOINTS = {
   WIZARD_DATA: '/api/tickets/wizard',
 };
 
-export async function getTickets(filters: TicketFilterParams = {}): Promise<ApiResponse<TicketsResponse>> {
-  return apiRequest<TicketsResponse>(ENDPOINTS.TICKETS, {
+export async function getTickets(filters: TicketFilterParams = {}): Promise<StandardResponse<Ticket[]>> {
+  return apiRequest<Ticket[]>(ENDPOINTS.TICKETS, {
     params: filters,
   });
 }
 
-export async function getTicketById(id: string): Promise<ApiResponse<TicketResponse>> {
-  return apiRequest<TicketResponse>(ENDPOINTS.TICKET_DETAIL(id));
+export async function getTicketById(id: string): Promise<StandardResponse<Ticket>> {
+  return apiRequest<Ticket>(ENDPOINTS.TICKET_DETAIL(id));
 }
 
-export async function createTicket(data: CreateTicketData): Promise<ApiResponse<TicketResponse>> {
-  return apiRequest<TicketResponse>(ENDPOINTS.TICKETS, {
+export async function createTicket(data: CreateTicketData): Promise<StandardResponse<Ticket>> {
+  return apiRequest<Ticket>(ENDPOINTS.TICKETS, {
     method: 'POST',
-    data,
+    body: data,
   });
 }
 ```
@@ -165,15 +190,18 @@ All API routes follow a consistent pattern:
 ```typescript
 // Standard structure for API routes
 import { NextResponse } from 'next/server';
-import { authenticateRequest } from '@/lib/api/middleware';
+import { NextResponse } from 'next/server';
+import { withAuthentication, AuthenticatedUser } from '@/lib/api/middleware'; // Updated import
 import { handleApiError } from '@/lib/errors/error-handler';
 import { ValidationError } from '@/lib/errors/error-types';
-import { createResourceSchema } from './validation';
+import { createResourceSchema } from './validation'; // Assuming validation schema exists
 
-export const POST = authenticateRequest(async (userId, request) => {
+// Example using withAuthentication wrapper
+export const POST = withAuthentication(async (user: AuthenticatedUser, request: Request) => {
   try {
     // 1. Verify permissions if needed
-    await verifyPermissions(userId);
+    // Permissions might be checked via user.role or specific claims if needed
+    // Example: if (user.role !== 'admin') throw new ForbiddenError(...);
     
     // 2. Parse and validate request data
     const body = await request.json();
@@ -189,13 +217,13 @@ export const POST = authenticateRequest(async (userId, request) => {
     }
     
     // 3. Execute business logic
-    const result = await createResource(userId, validationResult.data);
+    const result = await createResource(user.uid, validationResult.data); // Use user.uid
     
     // 4. Return standardized response
     return NextResponse.json({
       success: true,
       message: 'Resource created successfully',
-      [resourceName]: result,
+      resource: result, // Use a consistent property name like 'resource' or specific name
       timestamp: new Date().toISOString()
     }, { status: 201 });
   } catch (error) {
@@ -211,16 +239,17 @@ API routes delegate business logic to helper functions for better separation of 
 
 ```typescript
 // Example of business logic separation
-// route.ts - Route handler
-export const GET = authenticateRequest(async (userId, request, { params }) => {
+// route.ts - Route handler using withAuthentication
+export const GET = withAuthentication(async (user: AuthenticatedUser, request: Request, { params }: { params: { id: string } }) => {
   try {
     const { id } = params;
-    const resource = await getResourceById(userId, id);
+    // Pass the authenticated user object or specific details like UID
+    const resource = await getResourceById(user, id);
     
     return NextResponse.json({
       success: true,
       message: 'Resource retrieved successfully',
-      [resourceName]: resource,
+      resource: resource, // Use consistent property name
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -228,22 +257,30 @@ export const GET = authenticateRequest(async (userId, request, { params }) => {
   }
 });
 
-// helpers.ts - Business logic
-export async function getResourceById(userId: string, id: string) {
+// helpers.ts - Business logic accepting AuthenticatedUser
+import { getFirestoreAdmin } from '@/lib/firebase/admin'; // Ensure correct import
+import { NotFoundError, ForbiddenError } from '@/lib/errors/error-types';
+import { AuthenticatedUser } from '@/lib/api/middleware'; // Import user type
+
+const COLLECTION_NAME = 'your_collection_name'; // Replace with actual collection name
+
+export async function getResourceById(user: AuthenticatedUser, id: string) {
   const db = getFirestoreAdmin();
   const docRef = db.collection(COLLECTION_NAME).doc(id);
   const doc = await docRef.get();
-  
+
   if (!doc.exists) {
     throw new NotFoundError(
       `Resource with ID ${id} not found`,
       'RESOURCE_NOT_FOUND'
     );
   }
-  
-  // Verify access
-  const data = doc.data();
-  if (data.ownerId !== userId) {
+
+  const data = doc.data() as { ownerId?: string; /* other fields */ }; // Type assertion
+
+  // Verify access based on user ID or role from the verified token
+  // Example: Check ownership or admin role
+  if (data.ownerId !== user.uid && user.role !== 'admin') {
     throw new ForbiddenError(
       'You do not have access to this resource',
       'ACCESS_DENIED'
@@ -255,105 +292,144 @@ export async function getResourceById(userId: string, id: string) {
     ...data
   };
 }
+
+}
 ```
 
 ## Authentication Architecture
 
 ### Authentication Flow
 
-Simple Tracker uses Firebase Authentication with a multi-level authentication approach:
+Simple Tracker now uses a server-centric authentication flow leveraging Firebase Authentication and the Firebase Admin SDK:
 
-1. **Client-Side Authentication**
-   - User submits credentials
-   - Firebase authenticates and returns tokens
-   - Tokens stored in cookies and memory
+1.  **User Login:**
+    *   The user submits their **username and password** to a custom API endpoint (`/api/auth/login`).
+    *   The server verifies the credentials against stored user data (including a hashed password) in Firestore.
+    *   Upon successful verification, the server uses the **Firebase Admin SDK** to mint a **Firebase Custom Token** (`createCustomToken`).
+    *   This custom token is returned to the client.
 
-2. **Token Management**
-   - Automatic token refresh before expiration
-   - Session cookies for server-side authentication
+2.  **Client-Side Session Establishment:**
+    *   The client receives the custom token.
+    *   The client uses the **Firebase Client SDK** method `signInWithCustomToken(customToken)` to exchange the custom token for a standard Firebase **ID Token** and Refresh Token.
+    *   The Firebase Client SDK automatically manages the ID token, including refreshing it before expiration.
 
-3. **API Authentication Middleware**
-   - Extracts and verifies tokens from headers
-   - Provides authenticated user ID to route handlers
+3.  **API Request Authentication:**
+    *   For subsequent requests to protected API endpoints, the client retrieves the current **ID Token**.
+    *   The client sends the ID Token in the `Authorization` header as a **Bearer token**: `Authorization: Bearer <ID_token>`.
 
-### Authentication Middleware
+4.  **Server-Side Verification (Middleware):**
+    *   API routes and Next.js middleware (`src/middleware.ts`) intercept incoming requests.
+    *   They extract the Bearer token from the `Authorization` header.
+    *   The **Firebase Admin SDK** (`verifyIdToken(token)`) is used on the server to verify the ID token's signature, expiration, and claims.
+    *   If valid, the decoded token payload (including `uid` and custom claims like `role`) is made available to the route handler.
 
-All API routes are protected by authentication middleware that:
+### API Authentication Middleware & Wrappers
 
-1. Extracts and verifies Firebase ID tokens
-2. Provides the authenticated user ID to handlers
-3. Handles authentication errors consistently
+API routes are protected using higher-order functions (wrappers) located in `src/lib/api/middleware.ts`. These wrappers ensure consistent authentication and authorization:
+
+1.  **Token Extraction & Verification:**
+    *   They expect the Firebase ID Token to be sent in the `Authorization: Bearer <ID_token>` header.
+    *   They use the **Firebase Admin SDK** (`verifyIdToken`) to securely verify the token on the server-side.
+    *   Authentication errors (missing token, invalid token, expired token) are handled centrally.
+
+2.  **User Context Injection:**
+    *   Upon successful verification, the decoded token payload, including `uid`, `email` (if available), and **verified custom claims** (like `role`), is packaged into an `AuthenticatedUser` object.
+    *   This `AuthenticatedUser` object is passed as the first argument to the protected route handler, providing type-safe access to user information.
+
+3.  **Role-Based Access Control (RBAC):**
+    *   Specific wrappers like `withAdminRole` incorporate role checks directly within the wrapper logic. They verify the `role` claim extracted from the *verified* token.
+    *   This eliminates the need for separate role verification calls within each route handler and prevents reliance on potentially insecure client-provided headers or unverified token data.
 
 ```typescript
-// Authentication middleware
-export function authenticateRequest<Params extends {} = {}>(
-  handler: (userId: string, request: Request, params: Params) => Promise<Response>
-) {
-  return async (request: Request, params: Params): Promise<Response> => {
+// src/lib/api/middleware.ts (Conceptual Example)
+
+import { getAuthAdmin } from '@/lib/firebase/admin';
+import { handleApiError } from '@/lib/errors/error-handler';
+import { UnauthorizedError, ForbiddenError } from '@/lib/errors/error-types';
+import { DecodedIdToken } from 'firebase-admin/auth';
+
+// Type for the authenticated user object passed to handlers
+export interface AuthenticatedUser extends DecodedIdToken {
+  // Add specific role type if defined, e.g., role?: 'admin' | 'employee';
+  role?: string;
+}
+
+type ApiHandler<TParams = {}> =
+  (user: AuthenticatedUser, request: Request, context: { params: TParams }) => Promise<Response>;
+
+// Wrapper for basic authentication
+export function withAuthentication<TParams = {}>(handler: ApiHandler<TParams>) {
+  return async (request: Request, context: { params: TParams }): Promise<Response> => {
     try {
-      // Extract token from header
       const authHeader = request.headers.get('authorization');
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        throw new UnauthorizedError(
-          'Missing or invalid authentication token',
-          'MISSING_AUTH_TOKEN'
-        );
+        throw new UnauthorizedError('Missing or invalid Bearer token', 'MISSING_AUTH_TOKEN');
       }
-      
       const token = authHeader.split('Bearer ')[1];
       
-      // Verify token
       const auth = getAuthAdmin();
       const decodedToken = await auth.verifyIdToken(token);
       
-      // Extract user ID
-      const userId = decodedToken.uid;
-      
-      // Call handler with authenticated user ID
-      return handler(userId, request, params);
+      // Attach custom claims if they exist
+      const user: AuthenticatedUser = {
+        ...decodedToken,
+        role: decodedToken.role // Assuming 'role' is the custom claim name
+      };
+
+      return handler(user, request, context);
     } catch (error) {
+      // Handle specific Firebase auth errors (e.g., token expired)
       return handleApiError(error, 'Authentication failed');
     }
   };
 }
-```
 
-### Role Verification
-
-Role verification happens in separate functions within route handlers:
-
-```typescript
-// Role verification in route handler
-export const GET = authenticateRequest(async (userId, request) => {
-  try {
-    // Verify admin role
-    await verifyAdminRole(userId);
-    
-    // Process the admin-only request
-    // ...
-  } catch (error) {
-    return handleApiError(error, 'Operation failed');
-  }
-});
-
-// Utility function for role verification
-async function verifyAdminRole(userId: string) {
-  const auth = getAuthAdmin();
-  const user = await auth.getUser(userId);
-  
-  const customClaims = user.customClaims || {};
-  if (!customClaims.role || customClaims.role !== 'admin') {
-    throw new ForbiddenError(
-      'Admin access required',
-      'ADMIN_ROLE_REQUIRED'
-    );
-  }
-  
-  return user;
+// Wrapper for admin-only routes
+export function withAdminRole<TParams = {}>(handler: ApiHandler<TParams>) {
+  return withAuthentication<TParams>(async (user, request, context) => {
+    // Role check using verified claims from the token
+    if (user.role !== 'admin') {
+      throw new ForbiddenError('Admin access required', 'ADMIN_ROLE_REQUIRED');
+    }
+    return handler(user, request, context);
+  });
 }
 ```
 
-This separation of token verification (middleware) and role verification (route handlers) provides flexibility for different role requirements per route.
+Route handlers now receive the `AuthenticatedUser` object directly:
+
+```typescript
+// Example usage in /api/some-resource/route.ts
+import { withAuthentication, AuthenticatedUser } from '@/lib/api/middleware';
+
+export const GET = withAuthentication(async (user: AuthenticatedUser, request: Request) => {
+  // Access user details securely: user.uid, user.role, etc.
+  const data = await getSomeResourceForUser(user.uid);
+  return NextResponse.json({ success: true, data });
+});
+
+// Example usage in /api/admin/users/route.ts
+import { withAdminRole, AuthenticatedUser } from '@/lib/api/middleware';
+
+export const POST = withAdminRole(async (adminUser: AuthenticatedUser, request: Request) => {
+  // This code only runs if the user has the 'admin' role in their verified token
+  const newUserDetails = await request.json();
+  const result = await createNewUser(newUserDetails, adminUser.uid); // Pass admin UID if needed for logging
+  return NextResponse.json({ success: true, user: result }, { status: 201 });
+});
+```
+
+### Role Verification (Integrated into Middleware)
+
+As described above, role verification is now primarily handled **within the authentication wrappers** (like `withAdminRole`) using **verified custom claims** from the Firebase ID Token.
+
+This approach offers several advantages:
+
+*   **Security:** Roles are based on server-verified information, preventing tampering or reliance on insecure client-side data or headers (like the old `x-user-role`).
+*   **Consistency:** Authorization logic is centralized within the middleware, reducing boilerplate code in individual route handlers.
+*   **Simplicity:** Route handlers can focus on business logic, assuming the user context provided by the wrapper already meets the required authentication and authorization level.
+
+There is no longer a need for separate `verifyAdminRole(userId)` utility functions called within each handler, as this check is performed by the wrapper itself using the `user.role` claim.
 
 ## Error Handling
 
@@ -479,14 +555,16 @@ export const ticketBaseSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   jobsiteId: z.string().min(1, 'Jobsite is required'),
   truckId: z.string().min(1, 'Truck is required'),
-  categories: z.object({
-    hangers: z.number().int().min(0).max(150),
-    leaner6To12: z.number().int().min(0).max(150),
-    leaner13To24: z.number().int().min(0).max(150),
-    leaner25To36: z.number().int().min(0).max(150),
-    leaner37To48: z.number().int().min(0).max(150),
-    leaner49Plus: z.number().int().min(0).max(150),
+  // Categories represent a dynamic map of category names/IDs to counts
+  categories: z.record(z.string(), z.number().int().min(0).max(999), {
+    required_error: "Categories map is required",
+    invalid_type_error: "Categories must be an object mapping strings to numbers",
+  }).refine(val => Object.keys(val).length > 0, {
+    message: "At least one category entry is required",
+  }).refine(val => Object.values(val).every(count => count >= 0), {
+    message: "All category counts must be non-negative",
   }),
+  // Note: The refine checks ensure the map is not empty and counts are valid.
 });
 
 // Create operation schema
@@ -561,7 +639,7 @@ All API responses follow a consistent format with resource-specific properties i
 {
   success: true,
   message: string, // Human-readable success message
-  [resourceName]: object | array, // Resource-specific property (e.g., "ticket", "tickets")
+  [resourceName]?: object | array, // Resource-specific property (e.g., "ticket", "tickets"), optional for simple success messages
   pagination?: { // Optional pagination information
     total: number,
     page: number,
@@ -583,9 +661,10 @@ Example:
       "id": "ticket-123",
       "date": "2025-03-15",
       "jobsiteId": "site-1",
-      "categories": {
+      "categories": { // Example map structure
         "hangers": 120,
-        "leaner6To12": 45
+        "leaners_short": 45,
+        "leaners_medium": 30
       }
     }
   ],
@@ -649,11 +728,12 @@ export const batchOperationSchema = z.object({
   })).min(1).max(100)
 });
 
-// Batch operation handler
-export const POST = authenticateRequest(async (userId, request) => {
+// Batch operation handler (using admin wrapper)
+import { withAdminRole, AuthenticatedUser } from '@/lib/api/middleware';
+
+export const POST = withAdminRole(async (adminUser: AuthenticatedUser, request: Request) => {
   try {
-    // Verify admin role
-    await verifyAdminRole(userId);
+    // Admin role is already verified by the wrapper
     
     // Parse and validate request body
     const body = await request.json();
@@ -670,7 +750,7 @@ export const POST = authenticateRequest(async (userId, request) => {
     
     // Process batch operations
     const results = await processBatchOperations(
-      userId,
+      adminUser, // Pass the authenticated admin user object
       validationResult.data.operations
     );
     
@@ -692,7 +772,7 @@ export const POST = authenticateRequest(async (userId, request) => {
 ```typescript
 // Process batch operations
 async function processBatchOperations(
-  userId: string,
+  adminUser: AuthenticatedUser, // Accept the user object
   operations: BatchOperation[]
 ): Promise<BatchOperationResults> {
   const db = getFirestoreAdmin();
@@ -735,8 +815,8 @@ async function processBatchOperations(
           
           batch.update(docRef, {
             ...data,
-            updatedBy: userId,
-            updatedAt: serverTimestamp()
+            updatedBy: adminUser.uid, // Use UID from authenticated user
+            updatedAt: serverTimestamp() // Ensure serverTimestamp is imported/available
           });
           break;
           
@@ -747,7 +827,7 @@ async function processBatchOperations(
         case 'archive':
           batch.update(docRef, {
             status: 'archived',
-            updatedBy: userId,
+            updatedBy: adminUser.uid, // Use UID from authenticated user
             updatedAt: serverTimestamp()
           });
           break;
@@ -775,7 +855,7 @@ async function processBatchOperations(
   if (results.successful.length > 0) {
     await batch.commit();
   }
-  
+
   return results;
 }
 ```
@@ -788,38 +868,62 @@ API routes are tested with Next.js route handlers testing:
 
 ```typescript
 // Example API route test
-import { POST } from './route';
-import { createTicket } from './helpers';
+import { POST } from './route'; // Assuming this is the route using withAuthentication/withAdminRole
+// import { createTicket } from './helpers'; // Mock the actual helper used by the route
 import { NextRequest } from 'next/server';
+import { AuthenticatedUser } from '@/lib/api/middleware'; // Import user type
 
-// Mock dependencies
+// Mock the middleware directly or its underlying dependencies (Firebase Admin SDK)
+jest.mock('@/lib/api/middleware', () => {
+  const originalModule = jest.requireActual('@/lib/api/middleware');
+  return {
+    ...originalModule,
+    // Mock the specific wrapper used by the route (e.g., withAuthentication)
+    withAuthentication: jest.fn((handler) => async (request, context) => {
+      // Simulate successful authentication and provide a mock user
+      const mockUser: AuthenticatedUser = {
+        uid: 'test-user-id',
+        email: 'test@example.com',
+        role: 'employee', // Or 'admin' if testing admin routes
+        // Add other necessary fields from DecodedIdToken if used by the handler
+        aud: '', iss: '', sub: '', auth_time: 0, iat: 0, exp: 0, email_verified: false, firebase: { identities: {}, sign_in_provider: '' }
+      };
+      return handler(mockUser, request, context);
+    }),
+    // Mock withAdminRole similarly if needed, ensuring mockUser has role: 'admin'
+    withAdminRole: jest.fn((handler) => async (request, context) => {
+       const mockUser: AuthenticatedUser = {
+        uid: 'test-admin-id',
+        email: 'admin@example.com',
+        role: 'admin',
+        aud: '', iss: '', sub: '', auth_time: 0, iat: 0, exp: 0, email_verified: false, firebase: { identities: {}, sign_in_provider: '' }
+      };
+       // Simulate role check passing
+       return handler(mockUser, request, context);
+    }),
+  };
+});
+
+// Mock other dependencies like Firestore if needed by the handler/helpers
 jest.mock('@/lib/firebase/admin', () => ({
-  getAuthAdmin: jest.fn().mockReturnValue({
-    verifyIdToken: jest.fn().mockResolvedValue({ uid: 'test-user-id' }),
-    getUser: jest.fn().mockResolvedValue({
-      customClaims: { role: 'admin' }
-    })
-  }),
+  // Keep mocks for Firestore if helpers still use it directly
   getFirestoreAdmin: jest.fn().mockReturnValue({
-    collection: jest.fn().mockReturnValue({
-      add: jest.fn().mockResolvedValue({ id: 'new-ticket-id' }),
-      doc: jest.fn().mockReturnValue({
-        get: jest.fn().mockResolvedValue({
-          exists: true,
-          data: () => ({ /* mock data */ }),
-          id: 'test-id'
-        })
-      })
-    })
-  })
+     collection: jest.fn().mockReturnValue({
+       add: jest.fn().mockResolvedValue({ id: 'new-ticket-id' }),
+       // ... other Firestore mocks
+     })
+  }),
+  // getAuthAdmin might not be needed directly if middleware is mocked,
+  // but keep if other parts of the code use it.
+  getAuthAdmin: jest.fn(),
 }));
 
-// Mock helper functions
+// Mock the specific helper function called by your route handler
+// Adjust the path and function name accordingly
 jest.mock('./helpers', () => ({
-  createTicket: jest.fn().mockResolvedValue({
-    id: 'new-ticket-id',
-    date: '2025-03-15',
-    // other ticket properties
+  createResource: jest.fn().mockResolvedValue({ // Assuming createResource is the helper
+    id: 'new-resource-id',
+    // other resource properties
   })
 }));
 
@@ -836,13 +940,11 @@ describe('POST /api/tickets', () => {
         date: '2025-03-15',
         jobsiteId: 'site-1',
         truckId: 'truck-1',
-        categories: {
-          hangers: 120,
-          leaner6To12: 45,
-          leaner13To24: 30,
-          leaner25To36: 15,
-          leaner37To48: 5,
-          leaner49Plus: 0
+        categories: { // Example map structure
+          "hangers": 120,
+          "leaners_short": 45,
+          "leaners_medium": 30,
+          "leaners_long": 15
         },
         images: ['https://example.com/image1.jpg']
       })
@@ -856,15 +958,16 @@ describe('POST /api/tickets', () => {
     expect(response.status).toBe(201);
     expect(body.success).toBe(true);
     expect(body.ticket).toBeDefined();
-    expect(body.ticket.id).toBe('new-ticket-id');
-    
-    // Verify helper function was called with correct arguments
-    expect(createTicket).toHaveBeenCalledWith(
-      'test-user-id',
+    expect(body.resource).toBeDefined(); // Check the resource property used in the response
+    expect(body.resource.id).toBe('new-resource-id');
+
+    // Verify helper function was called with UID from the mock user
+    expect(require('./helpers').createResource).toHaveBeenCalledWith( // Access mocked helper
+      'test-user-id', // UID from the mockUser in withAuthentication mock
       expect.objectContaining({
         date: '2025-03-15',
         jobsiteId: 'site-1',
-        // other properties
+        // other properties...
       })
     );
   });
@@ -891,6 +994,7 @@ describe('POST /api/tickets', () => {
     expect(response.status).toBe(400);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('validation/failed');
+
     expect(body.error.details).toBeDefined();
   });
 });

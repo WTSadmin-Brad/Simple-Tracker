@@ -186,6 +186,7 @@ Domain-specific hooks for application features:
 3. **useJobsites**: Jobsite management
 4. **useTrucks**: Truck inventory management
 5. **useWizard**: Wizard state and navigation
+6. **useAuth**: Provides access to the current authentication state (user object, loading status, roles). It interacts with the `authStore` (Zustand), which derives its state primarily from the Firebase Client SDK's authentication listeners (`onAuthStateChanged`, `onIdTokenChanged`). User roles obtained via this hook are sourced from **verified ID token claims**.
 
 ## TanStack Query Hooks
 
@@ -199,6 +200,25 @@ Query hooks follow these patterns:
 4. **Standardized Options**: Consistent query options
 5. **Explicit Return Types**: Typed query results
 
+Example of a standard query hook pattern:
+
+```tsx
+const useTickets = (filters: TicketFilterParams = {}) => {
+  return useQuery({
+    queryKey: queryKeys.tickets.list(filters),
+    queryFn: async () => {
+      const response = await getTickets(filters);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.tickets; // Use resource-specific property instead of generic 'data'
+    },
+    staleTime: TICKET_LIST_STALE_TIME,
+    ...createRetryConfig(2),
+  });
+};
+```
+
 ### Mutation Hook Patterns
 
 Mutation hooks follow these patterns:
@@ -209,14 +229,55 @@ Mutation hooks follow these patterns:
 4. **Error Handling**: Standardized error handling
 5. **Success Callbacks**: Support for success actions
 
+Example of a standard mutation hook pattern:
+
+```tsx
+const useSubmitTicket = () => {
+  return useMutation({
+    mutationFn: (data: WizardData) => submitTicket(data),
+    ...createMutationOptionsWithInvalidation(queryClient, { toast }, {
+      loading: 'Submitting ticket...',
+      success: 'Ticket submitted successfully!',
+      error: 'Failed to submit ticket',
+      operationName: 'submitTicket',
+      invalidateQueries: [queryKeys.tickets.lists()],
+    }),
+  });
+};
+```
+
 ### Integration with API Client
 
-Query hooks integrate with the API client:
+Query hooks integrate with the API client using the standardized response format:
 
-1. **API Function Integration**: Direct use of API client functions
-2. **Error Handling Integration**: Throw-and-catch pattern
-3. **Response Transformation**: Consistent data extraction
-4. **Typesafe Parameters**: Type-safe inputs to API functions
+1. **API Function Integration**: Hooks call API client functions (e.g., `getTickets`, `submitTicket`) which return `StandardResponse<T>`.
+2. **Automatic Authentication**: The underlying API client (e.g., `apiRequest`) automatically retrieves the current Firebase ID token and includes it in the `Authorization: Bearer <token>` header for requests to protected endpoints. Hooks **do not** need to manually manage or pass authentication tokens.
+3. **Error Handling Integration**: Hooks check `response.success` from the API function and throw errors using `response.message` for TanStack Query to handle. Server-side token verification failures are handled by the API layer and result in appropriate error responses.
+4. **Response Transformation**: Hooks extract domain-specific properties (e.g., `response.tickets`) from the successful API response.
+5. **Typesafe Parameters**: Hooks ensure type-safe inputs are passed to the API functions.
+Example of API client integration with standardized responses:
+
+```tsx
+// API function that returns StandardResponse
+async function getTicketById(id: string): Promise<StandardResponse<TicketResponse>> {
+  return apiRequest<TicketResponse>(ENDPOINTS.TICKET(id));
+}
+
+// Query hook that uses the API function
+const useTicket = (id: string | null) => {
+  return useQuery({
+    queryKey: queryKeys.tickets.detail(id || ''),
+    queryFn: async () => {
+      const response = await getTicketById(id || '');
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.ticket; // Use resource-specific 'ticket' property
+    },
+    enabled: !!id,
+  });
+};
+```
 
 ### State Derivation
 
@@ -244,10 +305,11 @@ Hooks use React's useState for local state:
 
 Hooks integrate with Zustand for global state:
 
-1. **Store Access Patterns**: Consistent access to Zustand stores
-2. **Selector Patterns**: Optimized selectors for performance
-3. **Action Integration**: Using store actions within hooks
-4. **State Synchronization**: Keeping local and global state in sync
+1. **Store Access Patterns**: Consistent access to Zustand stores (e.g., `authStore`, `uiStore`).
+2. **Selector Patterns**: Optimized selectors for performance, especially when subscribing to parts of a store like `authStore`.
+3. **Action Integration**: Using store actions within hooks (e.g., calling `authStore.login()` which interacts with the `/api/auth/login` endpoint).
+4. **State Derivation (Auth)**: Specifically for `authStore`, its state (like `user`, `isAuthenticated`, `roles`) is primarily derived reactively from the Firebase Client SDK's authentication listeners (`onAuthStateChanged`, `onIdTokenChanged`) and the resulting verified ID token claims. Hooks like `useAuth` consume this state.
+5. **State Synchronization**: Keeping local hook state synchronized with global Zustand state where necessary.
 5. **Persistence Integration**: Working with persisted state
 
 ### Integration with TanStack Query
@@ -274,13 +336,26 @@ Hooks synchronize state between different sources:
 
 ### Standard Error Handling Patterns
 
-All hooks handle errors consistently:
+All hooks use a consistent pattern for handling API response errors:
 
-1. **Error State Management**: Storing error messages
-2. **Error Classification**: Classifying error types
-3. **User-Friendly Messages**: Converting technical errors to user messages
-4. **Error Clearing**: Patterns for clearing errors
-5. **Error Context**: Providing context with errors
+1. **Success Check**: Check `response.success` to determine if the operation succeeded
+2. **Error Extraction**: Extract error details from the standardized error response
+3. **Error Throwing**: Throw errors with `response.message` for TanStack Query to handle
+4. **User-Friendly Messages**: Leverage the pre-formatted error messages from the API
+5. **Error Context**: Preserve error context for debugging
+
+Example of standardized error handling in query hooks:
+
+```tsx
+queryFn: async () => {
+  const response = await getTickets(filters);
+  if (!response.success) {
+    throw new Error(response.message);
+    // The error message is already user-friendly from the API
+  }
+  return response.tickets;
+},
+```
 
 ### Retry Logic
 
@@ -292,15 +367,54 @@ Asynchronous operations implement retry logic:
 4. **User Feedback**: Keeping users informed of retries
 5. **Fallback Mechanisms**: Graceful degradation on failure
 
+Example of retry configuration:
+
+```tsx
+function createRetryConfig(maxRetries = 3) {
+  return {
+    retry: maxRetries,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+  };
+}
+
+// Using the retry config in a query
+useQuery({
+  // ... query configuration
+  ...createRetryConfig(2),
+});
+```
+
 ### Error Reporting
 
-Errors are reported through a centralized system:
+Errors are handled through a centralized error handler:
 
-1. **Error Logging**: Centralized error logging
-2. **Error Categorization**: Classifying errors for analysis
-3. **Context Collection**: Gathering context for debugging
-4. **User Impact Assessment**: Determining user impact
-5. **Critical Error Handling**: Special handling for critical errors
+1. **Standardized Error Format**: All API errors follow the standardized format
+2. **Central Error Handling**: The `errorHandler` utility processes all errors
+3. **User-Friendly Messages**: `getUserFriendlyMessage` converts technical errors to user messages
+4. **Context Preservation**: Error context is preserved for debugging
+5. **Categorized Reporting**: Errors are categorized for analysis
+
+Example of mutation error handling:
+
+```tsx
+// In mutationUtils.ts
+onError: (err: unknown) => {
+  if (showErrorToast) {
+    const userMessage = errorHandler.getUserFriendlyMessage(err);
+    toast({
+      title: error,
+      description: userMessage,
+      variant: "destructive",
+    });
+  }
+  
+  errorHandler.logError(err, { operation: operationName });
+  
+  if (onErrorCallback) {
+    onErrorCallback(err);
+  }
+},
+```
 
 ### Error Recovery
 
@@ -316,13 +430,40 @@ Hooks implement error recovery mechanisms:
 
 ### Type Definitions and Interfaces
 
-Hooks use comprehensive TypeScript types:
+Hooks use comprehensive TypeScript types for the standardized API responses:
 
-1. **Explicit Return Types**: Interface for hook return values
-2. **State Type Definitions**: Explicit types for state variables
-3. **Parameter Types**: Type definitions for hook parameters
-4. **Event Types**: Proper typing for event handlers
-5. **API Response Types**: Integration with API response types
+1. **StandardResponse**: The main response type that handles both success and error cases
+2. **Resource-Specific Types**: Types for specific resources (e.g., `TicketResponse`, `WorkdaysResponse`)
+3. **Error Response Type**: Type definition for standardized error responses
+4. **Return Type Interfaces**: Explicit interfaces for hook return values
+
+Example of API response types:
+
+```typescript
+// Base response for all API endpoints
+export interface BaseResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+}
+
+// Error response structure
+export interface ErrorResponse extends BaseResponse {
+  success: false;
+  error: {
+    code: string;
+    status: number;
+    details?: any;
+  };
+}
+
+// Resource-specific success response
+export interface TicketsResponse extends BaseResponse {
+  success: true;
+  tickets: Ticket[];
+  pagination?: PaginationMeta;
+}
+```
 
 ### Generic Hooks
 
@@ -378,13 +519,70 @@ Hook tests follow these patterns:
 
 ### Mocking Dependencies
 
-Tests mock external dependencies:
+Tests mock external dependencies with standardized responses:
 
-1. **API Mocking**: Mock API responses
-2. **Store Mocking**: Mock Zustand stores
-3. **Context Mocking**: Mock React context
-4. **Browser API Mocking**: Mock browser APIs
+1. **API Mocking**: Mock API responses that follow the standardized format
+2. **Success Response Mocking**: Mock successful responses with resource-specific properties
+3. **Error Response Mocking**: Mock error responses with the standardized error structure
+4. **Store Mocking**: Mock Zustand stores
 5. **Service Mocking**: Mock application services
+
+Example of testing a query hook with mocked standardized responses:
+
+```typescript
+describe('useTicketQueries', () => {
+  it('should fetch tickets successfully', async () => {
+    // Mock API response with standardized format
+    (getTickets as jest.Mock).mockResolvedValue({
+      success: true,
+      message: 'Tickets retrieved successfully',
+      tickets: [{ id: '1', title: 'Test Ticket' }],
+      timestamp: new Date().toISOString()
+    });
+    
+    // Render the hook with query client wrapper
+    const { result } = renderHook(() => {
+      const { useTickets } = useTicketQueries();
+      return useTickets({});
+    }, { wrapper: createWrapper() });
+    
+    // Initially loading
+    expect(result.current.isLoading).toBe(true);
+    
+    // Wait for query to complete
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    
+    // Check data (should be just the tickets array, not the full response)
+    expect(result.current.data).toEqual([{ id: '1', title: 'Test Ticket' }]);
+  });
+  
+  it('should handle errors correctly', async () => {
+    // Mock API error response with standardized format
+    (getTickets as jest.Mock).mockResolvedValue({
+      success: false,
+      message: 'Failed to retrieve tickets',
+      error: {
+        code: 'data/not-found',
+        status: 404,
+        details: null
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+    // Render the hook with query client wrapper
+    const { result } = renderHook(() => {
+      const { useTickets } = useTicketQueries();
+      return useTickets({});
+    }, { wrapper: createWrapper() });
+    
+    // Wait for query to complete with error
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    
+    // Error message should be from the standardized response
+    expect(result.current.error).toHaveProperty('message', 'Failed to retrieve tickets');
+  });
+});
+```
 
 ### Testing Different Hook Types
 
@@ -400,19 +598,19 @@ Different hook types have specific testing approaches:
 
 ### Legacy Hook Patterns
 
-The application is transitioning from legacy hooks:
+The application is transitioning from legacy hooks that used the older API response format:
 
-1. **Direct API Calls**: Hooks with embedded API calls
-2. **Local State Only**: Hooks without query caching
-3. **Manual Loading State**: Manually tracking loading state
-4. **Inconsistent Error Handling**: Varied error handling approaches
+1. **Generic Data Property**: Hooks that accessed data through a generic `data` property
+2. **Manual Success Check**: Hooks that manually checked `response.success`
+3. **Error Property Access**: Hooks that accessed `response.error` directly
+4. **Local State Only**: Hooks without query caching
 5. **Limited TypeScript Integration**: Incomplete typing
 
 ### Migration Approach
 
 The migration strategy follows these steps:
 
-1. **Create New Hooks**: Implement new hooks with TanStack Query
+1. **Create New Hooks**: Implement new hooks that use the standardized API response format
 2. **Maintain Legacy Hooks**: Keep existing hooks working during transition
 3. **Update Components**: Gradually update components to use new hooks
 4. **Remove Legacy Hooks**: Once all components are updated
@@ -422,10 +620,29 @@ The migration strategy follows these steps:
 During migration, compatibility layers enable smooth transition:
 
 1. **Legacy Hook Wrappers**: New hook implementation with legacy interface
-2. **Feature Flags**: Toggle between implementations
+2. **Response Transformation**: Converting between old and new response formats
 3. **Gradual Adoption**: Component-by-component migration
 4. **Data Consistency**: Ensuring consistent data across implementations
 5. **Performance Monitoring**: Tracking performance impacts
+
+Example of a compatibility wrapper:
+
+```typescript
+/**
+ * @deprecated Use useTicketQueries from '@/hooks/queries/useTicketQueries' instead
+ */
+export function useTickets(filters = {}) {
+  const { useTickets: useTicketsQuery } = useTicketQueries();
+  const query = useTicketsQuery(filters);
+  
+  return {
+    tickets: query.data || [],
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+  };
+}
+```
 
 ### Deprecation Process
 
@@ -478,4 +695,3 @@ Compose hooks effectively:
 3. **State Isolation**: Avoid unexpected state sharing
 4. **Explicit Interfaces**: Clear interfaces between hooks
 5. **Reuse Over Repetition**: Extract common patterns into reusable hooks
-

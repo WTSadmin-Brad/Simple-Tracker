@@ -4,36 +4,44 @@
  */
 
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/auth';
-import { verifyAdminRole } from '@/lib/auth/verify-admin';
-import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
-import { exportItemSchema, ExportItem } from '@/lib/schemas/exportSchemas';
+// Removed old auth imports
+import { getFirestoreAdmin, verifyIdToken } from '@/lib/firebase/admin'; // Corrected Firebase admin import + verifyIdToken
+import { collection, query, where, orderBy, getDocs, limit } from 'firebase-admin/firestore'; // Use admin SDK for Firestore functions
+import { exportItemSchema } from '@/lib/schemas/exportSchemas';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
+import { handleApiError } from '@/lib/api/middleware'; // Keep handleApiError
+import { AuthError } from '@/lib/errors/error-types'; // Import AuthError
+import { ValidationError, ForbiddenError, ErrorCodes } from '@/lib/errors/error-types';
 
 export async function GET(request: Request) {
   try {
-    // Authenticate user
-    const session = await auth();
-    if (!session || !session.user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    // Authenticate user and verify admin role using verifyIdToken
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new AuthError('Authentication required', ErrorCodes.AUTH_INVALID_TOKEN, 401);
+    }
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await verifyIdToken(token); // Throws on invalid/expired token
+
+    // Check for admin role
+    if (decodedToken.role !== 'admin') {
+      throw new ForbiddenError('Admin access required', ErrorCodes.AUTH_FORBIDDEN, 403);
     }
     
-    // Verify admin role
-    const isAdmin = await verifyAdminRole(session.user.id);
-    if (!isAdmin) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
+    // Use decodedToken.uid instead of session.user.id
+    const userId = decodedToken.uid;
     
     // Extract query parameters
     const url = new URL(request.url);
     const limitParam = url.searchParams.get('limit');
     const maxResults = limitParam ? parseInt(limitParam, 10) : 20;
     
-    // Query exports from Firestore
+    // Query exports from Firestore using getFirestoreAdmin()
+    const db = getFirestoreAdmin();
     const exportsCollection = collection(db, 'exports');
     const exportsQuery = query(
       exportsCollection,
-      where('userId', '==', session.user.id),
+      where('userId', '==', userId), // Use userId from decodedToken
       orderBy('createdAt', 'desc'),
       limit(maxResults)
     );
@@ -79,18 +87,13 @@ export async function GET(request: Request) {
       }
     });
     
-    return NextResponse.json({ 
-      success: true, 
-      exports: validExports
-    });
-  } catch (error) {
-    console.error('Error fetching exports:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        message: 'Failed to fetch exports'
-      },
-      { status: 500 }
+    // Return standardized success response
+    return createSuccessResponse(
+      'Exports retrieved successfully',
+      validExports,
+      'exports'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to fetch exports');
   }
 }

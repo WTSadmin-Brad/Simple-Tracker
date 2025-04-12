@@ -9,16 +9,18 @@
  */
 
 import { NextResponse } from 'next/server';
-import { authenticateRequest, handleApiError } from '@/lib/api/middleware';
+import { withAdminRole, handleApiError } from '@/lib/api/middleware'; // Changed import
+import { AuthenticatedUser } from '@/types/api'; // Import AuthenticatedUser
+import { createSuccessResponse, createPaginatedResponse } from '@/lib/api/responseUtils';
 import { getAuthAdmin, getFirestoreAdmin } from '@/lib/firebase/admin';
 import { 
   fetchTrucks, 
   createTruck, 
   truckNumberExists,
   TruckFilterParams,
-  TRUCKS_COLLECTION
+  // Removed incorrect import: TRUCKS_COLLECTION
 } from './helpers';
-import { ValidationError, ErrorCodes, ForbiddenError, NotFoundError } from '@/lib/errors/error-types';
+import { ValidationError, ErrorCodes, ForbiddenError, NotFoundError } from '@/lib/errors'; // Assuming index.ts exports these
 import { z } from 'zod';
 
 // Schema for creating/updating a truck
@@ -39,30 +41,10 @@ const batchUpdateSchema = z.object({
   truckIds: z.array(z.string()).min(1, { message: "At least one truck ID is required" }),
   updates: truckSchema.partial()
 });
+// Define collection name locally
+const TRUCKS_COLLECTION = 'trucks';
 
-/**
- * Verifies the user has admin role
- * @param userId User ID to verify
- * @throws ForbiddenError if user is not an admin
- */
-async function verifyAdminRole(userId: string) {
-  const auth = getAuthAdmin();
-  const user = await auth.getUser(userId);
-  
-  const customClaims = user.customClaims || {};
-  if (!customClaims.role || customClaims.role !== 'admin') {
-    throw new ForbiddenError(
-      'Admin access required',
-      ErrorCodes.AUTH_INSUFFICIENT_PERMISSIONS,
-      { 
-        requiredRole: 'admin',
-        userRole: customClaims.role || 'none'
-      }
-    );
-  }
-  
-  return user;
-}
+// Removed verifyAdminRole function (handled by wrapper)
 
 /**
  * GET handler for retrieving trucks with filtering and pagination
@@ -70,12 +52,10 @@ async function verifyAdminRole(userId: string) {
  * @route GET /api/admin/trucks
  * @authentication Required with admin role
  */
-export const GET = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const GET = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
+    // Admin role is verified by the wrapper
     return await handleGetTrucks(request);
   } catch (error) {
     return handleApiError(error, 'Failed to retrieve trucks');
@@ -88,13 +68,11 @@ export const GET = authenticateRequest(async (userId, request) => {
  * @route POST /api/admin/trucks
  * @authentication Required with admin role
  */
-export const POST = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const POST = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleCreateTruck(userId, request);
+    // Admin role is verified by the wrapper
+    return await handleCreateTruck(user.uid, request); // Pass admin uid
   } catch (error) {
     return handleApiError(error, 'Failed to create truck');
   }
@@ -106,13 +84,11 @@ export const POST = authenticateRequest(async (userId, request) => {
  * @route PUT /api/admin/trucks
  * @authentication Required with admin role
  */
-export const PUT = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const PUT = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleUpdateTrucks(userId, request);
+    // Admin role is verified by the wrapper
+    return await handleUpdateTrucks(user.uid, request); // Pass admin uid
   } catch (error) {
     return handleApiError(error, 'Failed to update trucks');
   }
@@ -124,13 +100,11 @@ export const PUT = authenticateRequest(async (userId, request) => {
  * @route DELETE /api/admin/trucks
  * @authentication Required with admin role
  */
-export const DELETE = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const DELETE = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleDeleteTruck(userId, request);
+    // Admin role is verified by the wrapper
+    return await handleDeleteTruck(user.uid, request); // Pass admin uid
   } catch (error) {
     return handleApiError(error, 'Failed to delete truck');
   }
@@ -156,13 +130,18 @@ async function handleGetTrucks(request: Request) {
   // Use helper function to fetch trucks with filtering
   const { trucks, pagination } = await fetchTrucks(filters);
   
-  return NextResponse.json({
-    success: true,
-    message: 'Trucks retrieved successfully',
-    count: trucks.length,
+  // Return standardized response using utility function
+  return createPaginatedResponse(
+    'Trucks retrieved successfully',
     trucks,
-    pagination
-  });
+    'trucks',
+    {
+      page: pagination.page || 1,
+      pageSize: pagination.pageSize || 10,
+      totalItems: pagination.total || 0, // Assuming helper returns 'total'
+      totalPages: pagination.totalPages || 1
+    }
+  );
 }
 
 /**
@@ -183,7 +162,7 @@ async function handleCreateTruck(userId: string, request: Request) {
     if (await truckNumberExists(validatedData.number)) {
       throw new ValidationError(
         'Truck number already exists',
-        ErrorCodes.VALIDATION_DUPLICATE_ENTRY,
+        ErrorCodes.DATA_ALREADY_EXISTS, // Correct Error Code
         409,
         { field: 'number', value: validatedData.number }
       );
@@ -201,11 +180,13 @@ async function handleCreateTruck(userId: string, request: Request) {
     // Use helper to create new truck
     const newTruck = await createTruck(truckData);
     
-    return NextResponse.json({
-      success: true,
-      message: 'Truck created successfully',
-      truck: newTruck
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Truck created successfully',
+      newTruck,
+      'truck',
+      { status: 201 }
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       throw new ValidationError(
@@ -277,14 +258,15 @@ async function handleUpdateTrucks(userId: string, request: Request) {
     // Execute the batch
     await batch.commit();
     
-    // Return successful response
-    return NextResponse.json({
-      success: true,
-      message: `${results.successful.length} trucks updated successfully`,
-      updated: results.successful,
-      failed: results.failed.length > 0 ? results.failed : undefined,
-      timestamp: new Date().toISOString()
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      `${results.successful.length} trucks updated successfully`,
+      {
+        updated: results.successful,
+        failed: results.failed.length > 0 ? results.failed : undefined
+      },
+      'results'
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       throw new ValidationError(
@@ -330,8 +312,9 @@ async function handleDeleteTruck(userId: string, request: Request) {
   if (!truckSnapshot.exists) {
     throw new NotFoundError(
       'Truck not found',
-      ErrorCodes.RESOURCE_NOT_FOUND,
-      { resourceType: 'truck', id: truckId }
+      ErrorCodes.DATA_NOT_FOUND, // Correct Error Code
+      404, // Add missing status code
+      { resourceType: 'truck', id: truckId } // Details object
     );
   }
   
@@ -342,10 +325,13 @@ async function handleDeleteTruck(userId: string, request: Request) {
     deletedBy: userId
   });
   
-  return NextResponse.json({
-    success: true,
-    message: 'Truck deleted successfully',
-    id: truckId,
-    deletedAt: new Date().toISOString()
-  });
+  // Return standardized response using utility function
+  return createSuccessResponse(
+    'Truck deleted successfully',
+    {
+      id: truckId,
+      deletedAt: new Date().toISOString()
+    },
+    'truck'
+  );
 }

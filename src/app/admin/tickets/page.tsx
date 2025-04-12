@@ -19,7 +19,7 @@ import TicketsDataGrid from './_components/tickets-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'Ticket Management | Admin | Simple Tracker',
-  description: 'Manage and review all ticket submissions',
+  description: 'Manage and review all ticket submissions'
 };
 
 export default async function TicketsManagementPage({

@@ -22,7 +22,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import DashboardCard from '../dashboard-card.client';
 import { CardSize } from '../dashboard-card.client';
-import dashboardService from '@/lib/services/dashboardService';
+import dashboardService from '@/lib/services/dashboard-service';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useCardData } from '../hooks';
 import { CardLoadingState, CardErrorState, CardEmptyState, CardFooterWithRefresh } from '../components';

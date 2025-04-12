@@ -4,7 +4,9 @@
  */
 
 import { NextResponse } from 'next/server';
-import { authenticateRequest, handleApiError } from '@/lib/api/middleware';
+import { withAdminRole, handleApiError } from '@/lib/api/middleware'; // Changed import
+import { AuthenticatedUser } from '@/types/api'; // Import AuthenticatedUser
+import { createSuccessResponse, createPaginatedResponse } from '@/lib/api/responseUtils';
 import { z } from 'zod';
 import { 
   searchArchiveWithPagination, 
@@ -18,26 +20,29 @@ import {
   fetchArchivedImageMetadata, 
   fetchArchivedImagesByTicket 
 } from '@/app/api/admin/archive/images/helpers';
-import { 
-  ArchiveRestoreSchema,
-  ArchiveImagesSchema, 
-  ArchiveSearchSchema 
+// Corrected schema import names to camelCase
+import {
+  archiveRestoreSchema,
+  archiveImagesSchema,
+  archiveSearchSchema
 } from '@/lib/schemas/archiveSchemas';
-import { verifyAdminRole } from '@/app/api/admin/users/route';
+// Removed: import { verifyAdminRole } from '@/app/api/admin/users/route';
+import { ValidationError, ErrorCodes } from '@/lib/errors/error-types';
 
 // GET handler for archive routes - mainly for search
-export const GET = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const GET = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   const { searchParams } = new URL(request.url);
-  const action = request.url.split('/').pop()?.split('?')[0];
+  // Extract action from pathname instead of full URL to avoid query params
+  const pathname = new URL(request.url).pathname;
+  const action = pathname.split('/').pop();
   
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
+    // Admin role is verified by the wrapper
     // 2. Process the request based on action
     switch (action) {
       case 'search':
-        return handleArchiveSearch(userId, searchParams);
+        return handleArchiveSearch(user.uid, searchParams); // Pass uid if needed by handler
         
       case 'images':
         const imageId = searchParams.get('imageId');
@@ -48,16 +53,19 @@ export const GET = authenticateRequest(async (userId, request) => {
         } else if (ticketId) {
           return handleGetArchivedTicketImages(ticketId);
         } else {
-          return NextResponse.json(
-            { success: false, message: 'Either imageId or ticketId is required' },
-            { status: 400 }
+          throw new ValidationError(
+            'Either imageId or ticketId is required',
+            ErrorCodes.VALIDATION_REQUIRED_FIELD,
+            400,
+            { requiredParams: ['imageId', 'ticketId'] }
           );
         }
         
       default:
-        return NextResponse.json(
-          { success: false, message: `Invalid archive action for GET: ${action}` },
-          { status: 400 }
+        throw new ValidationError(
+          `Invalid archive action for GET: ${action}`,
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400
         );
     }
   } catch (error) {
@@ -66,13 +74,14 @@ export const GET = authenticateRequest(async (userId, request) => {
 });
 
 // POST handler for archive routes - restore and archive operations
-export const POST = authenticateRequest(async (userId, request) => {
-  const action = request.url.split('/').pop()?.split('?')[0];
-  
+// Updated to use withAdminRole and new handler signature
+export const POST = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
+  // Extract action from pathname
+  const pathname = new URL(request.url).pathname;
+  const action = pathname.split('/').pop();
+
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
+    // Admin role is verified by the wrapper
     // 2. Process the request based on action
     switch (action) {
       case 'images':
@@ -82,9 +91,10 @@ export const POST = authenticateRequest(async (userId, request) => {
         return handleRestoreRequest(request);
         
       default:
-        return NextResponse.json(
-          { success: false, message: `Invalid archive action for POST: ${action}` },
-          { status: 400 }
+        throw new ValidationError(
+          `Invalid archive action for POST: ${action}`,
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400
         );
     }
   } catch (error) {
@@ -104,7 +114,7 @@ async function handleArchiveSearch(userId: string, searchParams: URLSearchParams
     const pageSize = parseInt(searchParams.get('pageSize') || '10', 10);
     
     // Validate parameters
-    const searchParamsData = ArchiveSearchSchema.merge(paginationSchema).parse({
+    const searchParamsData = archiveSearchSchema.merge(paginationSchema).parse({ // Use correct schema name
       type,
       query,
       dateFrom,
@@ -116,18 +126,28 @@ async function handleArchiveSearch(userId: string, searchParams: URLSearchParams
     // Call helper to perform search
     const results = await searchArchiveWithPagination(searchParamsData);
     
-    return NextResponse.json({ 
-      success: true,
-      ...results
-    });
+    // Return standardized paginated response
+    return createPaginatedResponse(
+      'Archive search completed successfully',
+      results.items || [],
+      'archiveItems',
+      {
+        page: results.pagination.page,
+        pageSize: results.pagination.pageSize,
+        totalItems: results.pagination.total, // Use 'total' property
+        totalPages: results.pagination.totalPages
+      }
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid search parameters', errors: error.format() },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid search parameters',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        error.format()
       );
     }
-    return handleApiError(error, 'Failed to search archives');
+    throw error;
   }
 }
 
@@ -138,23 +158,27 @@ async function handleArchiveImagesRequest(request: Request) {
     const body = await request.json();
     
     // Validate parameters
-    const imagesData = ArchiveImagesSchema.parse(body);
+    const imagesData = archiveImagesSchema.parse(body); // Use correct schema name
     
     // Call helper to archive images
     const result = await archiveImages(imagesData);
     
-    return NextResponse.json({ 
-      success: true,
-      ...result
-    });
+    // Return standardized success response
+    return createSuccessResponse(
+      'Images archived successfully',
+      result,
+      'archiveResult'
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid archive parameters', errors: error.format() },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid archive parameters',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        error.format()
       );
     }
-    return handleApiError(error, 'Failed to archive images');
+    throw error;
   }
 }
 
@@ -165,23 +189,27 @@ async function handleRestoreRequest(request: Request) {
     const body = await request.json();
     
     // Validate parameters
-    const restoreData = ArchiveRestoreSchema.parse(body);
+    const restoreData = archiveRestoreSchema.parse(body); // Use correct schema name
     
     // Call helper to restore item
     const result = await restoreArchivedData(restoreData);
     
-    return NextResponse.json({ 
-      success: true,
-      ...result
-    });
+    // Return standardized success response
+    return createSuccessResponse(
+      'Archive item restored successfully',
+      result,
+      'restoreResult'
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid restore parameters', errors: error.format() },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid restore parameters',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        error.format()
       );
     }
-    return handleApiError(error, 'Failed to restore archived item');
+    throw error;
   }
 }
 
@@ -190,12 +218,14 @@ async function handleGetArchivedImage(imageId: string) {
   try {
     const imageMetadata = await fetchArchivedImageMetadata(imageId);
     
-    return NextResponse.json({ 
-      success: true,
-      image: imageMetadata
-    });
+    // Return standardized success response
+    return createSuccessResponse(
+      'Archived image retrieved successfully',
+      imageMetadata,
+      'image'
+    );
   } catch (error) {
-    return handleApiError(error, 'Failed to retrieve archived image');
+    throw error;
   }
 }
 
@@ -204,12 +234,16 @@ async function handleGetArchivedTicketImages(ticketId: string) {
   try {
     const images = await fetchArchivedImagesByTicket(ticketId);
     
-    return NextResponse.json({ 
-      success: true,
-      images,
-      count: images.length
-    });
+    // Return standardized success response
+    return createSuccessResponse(
+      'Archived ticket images retrieved successfully',
+      {
+        images,
+        count: images.length
+      },
+      'ticketImages'
+    );
   } catch (error) {
-    return handleApiError(error, 'Failed to retrieve archived ticket images');
+    throw error;
   }
 }

@@ -30,6 +30,7 @@ This document describes the architectural patterns, design decisions, and organi
 ### Application Overview
 
 Simple Tracker is a web application for tracking work activities with:
+
 - Employee ticket submissions
 - Workday tracking and management
 - Admin dashboard for data oversight
@@ -37,12 +38,12 @@ Simple Tracker is a web application for tracking work activities with:
 
 ### Technology Stack
 
-- **Frontend Framework**: Next.js 15.3.0 (App Router)
-- **UI Library**: React 19 with TypeScript 5.8.2
-- **Styling**: Tailwind CSS 4.0.13 with shadcn/ui 0.9.5
-- **State Management**: Zustand 5.0.3 for client state, TanStack Query 5.67.3 for server state
-- **Form Management**: React Hook Form 7.54.2 with Zod 3.24.2 for validation
-- **Backend**: Firebase (Firestore + Storage)
+- **Frontend Framework**: Next.js 13.4.12 (App Router)
+- **UI Library**: React 18.2.0 with TypeScript 5.1.6
+- **Styling**: Tailwind CSS 3.3.3 (using Radix UI primitives directly, *not* shadcn/ui)
+- **State Management**: Zustand 4.3.9 for client state, TanStack Query 5.69.0 for server state
+- **Form Management**: React Hook Form 7.45.2 with Zod 3.21.4 for validation
+- **Backend**: Firebase (Firestore + Storage - Client SDK 10.7.1, Admin SDK used server-side)
 
 ## Core Architecture
 
@@ -106,7 +107,7 @@ Simple Tracker uses a layered component approach:
 
 1. **UI Primitives** (`/src/components/ui/`)
    - Basic building blocks (buttons, inputs, cards)
-   - Based on shadcn/ui components with consistent styling
+   - Based on Radix UI primitives with consistent styling
 
 2. **Common Components** (`/src/components/common/`)
    - Shared UI patterns used across features
@@ -130,11 +131,11 @@ Next.js App Router distinguishes between server and client components:
   - Used for static content and data fetching
   - Default unless specified otherwise
 
-- **Client Components** (`.client.tsx`)
+- **Client Components** (`'use client'`)
   - Run in the browser
   - Can use React hooks and browser APIs
   - Used for interactive components
-  - Explicitly marked with `.client.tsx` suffix
+  - Explicitly marked with the `"use client";` directive at the top of the file.
 
 > **Note:** Always consider whether a component needs interactivity before making it a client component, as server components offer better performance.
 
@@ -185,6 +186,7 @@ Zustand manages client-side state with these patterns:
 - **Minimalism**: Keep stores small and focused
 
 Example stores:
+
 - `authStore.ts`: User authentication state
 - `wizardStore.ts`: Ticket submission wizard state
 - `uiStore.ts`: Global UI state (theme, sidebar state)
@@ -246,58 +248,79 @@ Simple Tracker uses these data transformation patterns:
 
 ### API Response Format
 
-API responses follow this standard format:
+The application uses a standardized API response format across all endpoints:
 
 ```
+// Success response
 {
-  success: boolean,
+  success: true,
   message: string,
-  [resourceName]: resource-specific data,
+  [resourceName]: resource-specific data, // e.g., tickets, workday, user
+  timestamp: string (ISO date)
+}
+
+// Error response
+{
+  success: false,
+  message: string,
+  error: {
+    code: string,
+    status: number,
+    details?: any
+  },
   timestamp: string (ISO date)
 }
 ```
 
-> **Note:** The codebase has some inconsistency in response formats. Some endpoints use a generic `data` property while others use resource-specific properties (like `tickets`). The recommended approach is to use resource-specific properties for better type safety and intuitive client usage.
+This standardized format uses resource-specific properties (like `tickets` or `workday`) rather than a generic `data` property, providing better type safety and more intuitive client usage.
 
 ## Authentication Architecture
 
 ### Authentication Flow
 
-Simple Tracker uses Firebase Authentication with this flow:
+Simple Tracker uses a custom authentication flow integrated with Firebase Authentication:
 
-1. **Login**
-   - User submits credentials
-   - Firebase authenticates and returns tokens
-   - Tokens stored in cookies and memory
-
-2. **Token Management**
-   - Automatic token refresh before expiration
-   - Session cookies for server-side authentication
-
-3. **Logout**
-   - Tokens cleared from storage
-   - Server session terminated
+1.  **Login (Username/Password):**
+    *   User submits username and password via the client-side login form.
+    *   The client sends credentials to the custom API endpoint `/api/auth/login`.
+2.  **Server-Side Verification & Custom Token:**
+    *   The `/api/auth/login` endpoint verifies credentials (e.g., username and hashed password stored in Firestore).
+    *   Upon successful verification, the server uses the Firebase Admin SDK (`createCustomToken`) to mint a Firebase Custom Token for the user's UID.
+    *   This Custom Token is returned to the client.
+3.  **Client-Side Firebase Sign-In:**
+    *   The client receives the Custom Token.
+    *   The client uses the Firebase Client SDK (`signInWithCustomToken`) to exchange the Custom Token for a standard Firebase ID Token and Refresh Token.
+    *   The Firebase Client SDK automatically manages the ID Token lifecycle (including refresh).
+4.  **Authenticated Requests:**
+    *   For subsequent requests to protected API routes or during page navigation checks, the client sends the current Firebase ID Token in the `Authorization: Bearer <ID_token>` header.
+5.  **Logout:**
+    *   The client calls the Firebase Client SDK's sign-out method.
+    *   Client-side tokens and authentication state are cleared.
 
 ### Access Control Architecture
 
-Access control is implemented at multiple levels:
+Access control is implemented server-side using verified Firebase ID Tokens:
 
-1. **Page-Level Protection** (Next.js Middleware)
-   - In `src/middleware.ts`
-   - Redirects unauthenticated users to login
-   - Checks roles for admin routes
+1.  **Page-Level Protection (Next.js Middleware):**
+    *   Located in `src/middleware.ts`.
+    *   Intercepts requests for protected pages.
+    *   Extracts the ID Token from the `Authorization: Bearer` header.
+    *   Uses the Firebase Admin SDK (`verifyIdToken`) to verify the token's validity and signature *on the server*.
+    *   Redirects unauthenticated users (invalid/missing token) to the login page.
+    *   Checks *verified* custom claims (e.g., `role: 'admin'`) within the decoded token for role-specific routes (like `/admin`).
 
-2. **API Route Protection** (API Middleware)
-   - In `src/lib/api/middleware.ts`
-   - Verifies authentication tokens
-   - Provides user ID to route handlers
+2.  **API Route Protection (API Middleware Helpers):**
+    *   Helper functions (e.g., `withAuthentication`, `withAdminRole`) located in `src/lib/api/middleware.ts`.
+    *   These helpers wrap API route handlers.
+    *   They extract and verify the ID Token from the `Authorization: Bearer` header using the Firebase Admin SDK (`verifyIdToken`).
+    *   They enforce authentication and, where necessary, specific roles by checking *verified* custom claims from the token.
+    *   The verified user UID and claims are made available to the route handler.
 
-3. **Role Verification** (Route Handlers)
-   - Verifies appropriate roles for admin operations
-   - Implemented in individual route handlers
-
-> **Note:** The codebase separates token verification (in middleware) from role verification (in route handlers). This pattern offers flexibility but increases code repetition. Consider centralizing role verification if many routes have similar requirements.
-
+3.  **Role Verification (Server-Side Custom Claims):**
+    *   Role-Based Access Control (RBAC) relies *exclusively* on verified custom claims embedded within the Firebase ID Token.
+    *   Claims (e.g., `{ role: 'admin' }` or `{ role: 'employee' }`) are set securely on the server using the Firebase Admin SDK (e.g., during user creation or role update).
+    *   Both the Next.js middleware and API route protection helpers inspect these *verified* claims after successful token verification to make authorization decisions.
+    *   This approach eliminates insecure methods like relying on client-sent headers (`x-user-role`), insecurely decoded tokens (`jwt-decode`), or unverified token data.
 ### User Roles
 
 Simple Tracker supports these roles:
@@ -352,7 +375,11 @@ The central error handler in `src/lib/errors/error-handler.ts` provides:
    - Maps technical errors to user-friendly messages
    - Considers error context for message generation
 
-3. **Retry Capabilities**
+3. **Response Generation**
+   - Standardized error responses using `createErrorResponse` utility
+   - Consistent structure for client consumption
+
+4. **Retry Capabilities**
    - Automatic retry for transient errors
    - Exponential backoff for network issues
 
@@ -380,7 +407,7 @@ Firebase integration follows these patterns:
 API integration follows these patterns:
 
 1. **API Client**
-   - `src/lib/api/apiClient.ts`: Core request functions
+   - `src/lib/api/apiClient.ts`: Core request functions with standardized response handling
    - Domain-specific API modules (ticketApi.ts, etc.)
 
 2. **Request Formatting**
@@ -388,8 +415,9 @@ API integration follows these patterns:
    - Type-safe request building
 
 3. **Response Processing**
-   - Standard response structure
-   - Error extraction and handling
+   - Standardized response structure across all endpoints 
+   - Resource-specific properties for type-safe data access
+   - Consistent error extraction and handling
 
 ### Third-Party Service Integration
 
@@ -498,22 +526,14 @@ Development should follow these practices:
 
 The following areas in the codebase should be updated to follow established patterns:
 
-1. **API Response Format**
-   - Some API endpoints return `data` while others use resource-specific properties like `tickets`
-   - Standardize on resource-specific properties for better type safety
-
-2. **Role Verification**
+1. **Role Verification**
    - Admin route handlers repeat role verification code
    - Consider extracting into a shared utility function
 
-3. **Error Handling in Queries**
-   - Some query hooks have inconsistent error handling
-   - Standardize on the pattern in `src/lib/query/queryUtils.ts`
-
-4. **Type Definitions**
+2. **Type Definitions**
    - Some components lack explicit return type interfaces
    - Add interfaces for consistent typing
 
-5. **Query Key Structure**
+3. **Query Key Structure**
    - Some newer query keys don't follow the established pattern
    - Update to match the nested structure in `src/lib/query/queryKeys.ts`

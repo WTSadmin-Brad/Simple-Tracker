@@ -3,7 +3,7 @@
  * Provides a unified interface for all API requests
  */
 
-import { ApiResponse } from '@/types/api';
+import { ErrorCodes } from '../errors/error-types';
 
 type RequestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -16,16 +16,39 @@ interface RequestOptions {
 }
 
 /**
+ * Standardized API response type that follows our unified format
+ */
+export type StandardResponse<T = any> = SuccessResponse<T> | ErrorResponseType;
+
+interface SuccessResponse<T> {
+  success: true;
+  message: string;
+  timestamp: string;
+  [key: string]: any; // For resource-specific data properties
+}
+
+interface ErrorResponseType {
+  success: false;
+  message: string;
+  error: {
+    code: string;
+    status: number;
+    details?: any;
+  };
+  timestamp: string;
+}
+
+/**
  * Make an API request with standardized error handling
  * 
  * @param endpoint API endpoint path
  * @param options Request options
- * @returns Promise with typed API response
+ * @returns Promise with standardized API response
  */
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestOptions = {}
-): Promise<ApiResponse<T>> {
+): Promise<StandardResponse<T>> {
   const {
     method = 'GET',
     headers = {},
@@ -55,44 +78,46 @@ export async function apiRequest<T>(
       cache,
     });
 
-    // Handle non-JSON responses
+    // Parse response as JSON
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       const data = await response.json();
       
-      if (!response.ok) {
-        return {
-          success: false,
-          error: data.error || `Request failed with status ${response.status}`,
-          status: response.status,
-        };
-      }
-      
-      return {
-        success: true,
-        data,
-      };
+      // Our API now standardizes all responses, so we can just return the data
+      return data;
     } else {
       // Handle non-JSON responses (e.g., file downloads)
       if (!response.ok) {
         return {
           success: false,
-          error: `Request failed with status ${response.status}`,
-          status: response.status,
+          message: `Request failed with status ${response.status}`,
+          error: {
+            code: ErrorCodes.NETWORK_SERVER_ERROR,
+            status: response.status,
+          },
+          timestamp: new Date().toISOString()
         };
       }
       
-      const data = await response.text();
+      // For successful non-JSON responses (like file downloads), create a custom success response
       return {
         success: true,
-        data: data as unknown as T,
+        message: 'Resource retrieved successfully',
+        rawData: await response.text(), // Store raw text data
+        timestamp: new Date().toISOString()
       };
     }
   } catch (error) {
+    // Handle network or other errors
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
-      isNetworkError: true,
+      message: error instanceof Error ? error.message : 'Network error occurred',
+      error: {
+        code: ErrorCodes.NETWORK_OFFLINE,
+        status: 0,
+        details: error instanceof Error ? { name: error.name } : undefined
+      },
+      timestamp: new Date().toISOString()
     };
   }
 }
@@ -102,45 +127,56 @@ export async function apiRequest<T>(
  * 
  * @param endpoint API endpoint path
  * @param formData FormData object
- * @returns Promise with typed API response
+ * @returns Promise with standardized API response
  */
 export async function apiFormRequest<T>(
   endpoint: string,
   formData: FormData
-): Promise<ApiResponse<T>> {
+): Promise<StandardResponse<T>> {
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       body: formData,
     });
     
-    if (!response.ok) {
-      return {
-        success: false,
-        error: `Request failed with status ${response.status}`,
-        status: response.status,
-      };
-    }
-    
+    // Parse JSON response if available
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       const data = await response.json();
+      return data;
+    } 
+    
+    // If not a JSON response
+    if (!response.ok) {
       return {
-        success: true,
-        data,
-      };
-    } else {
-      const data = await response.text();
-      return {
-        success: true,
-        data: data as unknown as T,
+        success: false,
+        message: `Request failed with status ${response.status}`,
+        error: {
+          code: ErrorCodes.NETWORK_SERVER_ERROR,
+          status: response.status,
+        },
+        timestamp: new Date().toISOString()
       };
     }
+    
+    // For successful non-JSON responses
+    return {
+      success: true,
+      message: 'File uploaded successfully',
+      rawData: await response.text(),
+      timestamp: new Date().toISOString()
+    };
   } catch (error) {
+    // Handle network or other errors
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
-      isNetworkError: true,
+      message: error instanceof Error ? error.message : 'Network error occurred',
+      error: {
+        code: ErrorCodes.NETWORK_OFFLINE,
+        status: 0,
+        details: error instanceof Error ? { name: error.name } : undefined
+      },
+      timestamp: new Date().toISOString()
     };
   }
 }

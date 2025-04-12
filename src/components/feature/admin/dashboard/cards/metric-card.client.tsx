@@ -11,7 +11,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import DashboardCard from '../dashboard-card.client';
 import { CardSize } from '../dashboard-card.client';
-import dashboardService from '@/lib/services/dashboardService';
+import dashboardService from '@/lib/services/dashboard-service';
 import { useCardData } from '../hooks';
 import { CardLoadingState, CardErrorState, CardFooterWithRefresh } from '../components';
 

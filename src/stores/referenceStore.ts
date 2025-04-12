@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { getTrucks, getJobsites } from '@/lib/api/referenceApi';
 
 // Reference data interfaces
 interface Truck {
@@ -41,27 +42,26 @@ const fetchReferenceDataAction = () =>
     set({ isLoading: true, error: null });
     
     try {
-      // In a real implementation, this would call an API
-      // For now using a simulated delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Fetch truck data and jobsite data in parallel
+      const [trucksResponse, jobsitesResponse] = await Promise.all([
+        getTrucks(),
+        getJobsites()
+      ]);
       
-      // Sample data - in a real implementation, we would fetch from the backend
-      const trucks: Truck[] = [
-        { id: 'truck-1', name: 'Truck 1', number: 'T-001', isActive: true },
-        { id: 'truck-2', name: 'Truck 2', number: 'T-002', isActive: true },
-        { id: 'truck-3', name: 'Truck 3', number: 'T-003', isActive: false },
-      ];
+      // Handle error responses
+      if (!trucksResponse.success) {
+        throw new Error(trucksResponse.message || 'Failed to fetch trucks');
+      }
       
-      const jobsites: Jobsite[] = [
-        { id: 'site-1', name: 'Main Site', location: '123 Main St', isActive: true },
-        { id: 'site-2', name: 'Downtown', location: '456 Center Ave', isActive: true },
-        { id: 'site-3', name: 'North Location', location: '789 North Rd', isActive: false },
-      ];
+      if (!jobsitesResponse.success) {
+        throw new Error(jobsitesResponse.message || 'Failed to fetch jobsites');
+      }
       
       set({ 
         isLoading: false,
-        trucks,
-        jobsites,
+        // Use resource-specific properties (trucks, jobsites) instead of generic data property
+        trucks: trucksResponse.trucks || [],
+        jobsites: jobsitesResponse.jobsites || [],
         lastUpdated: new Date(),
         error: null
       });

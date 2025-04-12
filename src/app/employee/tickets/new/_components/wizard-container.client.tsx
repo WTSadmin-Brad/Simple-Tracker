@@ -18,7 +18,7 @@ import { ConfirmationStep } from './confirmation-step.client';
 import { SessionRecoveryPrompt } from './session-recovery-prompt.client';
 import { useWizardStore } from '@/stores/wizardStore';
 import { useWizardApi } from '@/hooks/useWizardApi';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
@@ -104,20 +104,12 @@ export function WizardContainer() {
           setDirection(1);
           setCurrentStep(WIZARD_STEPS[currentStepIndex + 1].id);
         } else if (apiError) {
-          toast({
-            title: 'Error',
-            description: `Failed to save data: ${apiError}`,
-            variant: 'destructive',
-          });
+          toast.error(`Failed to save data: ${apiError}`);
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
         setLocalError(errorMessage);
-        toast({
-          title: 'Error',
-          description: errorMessage,
-          variant: 'destructive',
-        });
+        toast.error(errorMessage);
       }
     }
   };
@@ -156,10 +148,7 @@ export function WizardContainer() {
         });
         
         if (result.success) {
-          toast({
-            title: 'Success',
-            description: `Ticket ${result.ticketId || ''} created successfully!`,
-          });
+          toast.success(`Ticket ${result.ticketId || ''} created successfully!`);
           
           // Clear wizard data
           clearWizard();
@@ -167,20 +156,12 @@ export function WizardContainer() {
           // Navigate to success page or home
           router.push('/employee/calendar');
         } else {
-          toast({
-            title: 'Error',
-            description: `Failed to submit ticket. Please try again.`,
-            variant: 'destructive',
-          });
+          toast.error(`Failed to submit ticket. Please try again.`);
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
         setLocalError(errorMessage);
-        toast({
-          title: 'Error',
-          description: errorMessage,
-          variant: 'destructive',
-        });
+        toast.error(errorMessage);
       }
     } else {
       setLocalError('Missing required information. Please complete all steps before submitting.');

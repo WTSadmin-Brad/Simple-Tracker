@@ -12,7 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { format } from 'date-fns';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -99,7 +99,7 @@ interface ExportFormProps {
 }
 
 export function ExportForm({ onExport }: ExportFormProps) {
-  const { toast } = useToast();
+  // Removed useToast hook, directly using toast from sonner
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Initialize form with React Hook Form and Zod validation

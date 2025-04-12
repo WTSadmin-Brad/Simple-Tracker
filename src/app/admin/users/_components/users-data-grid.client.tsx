@@ -9,7 +9,7 @@
 import { useRouter } from 'next/navigation';
 import { DataGrid, FilterBar, ActionBar } from '@/components/feature/admin/data-grid';
 import { useAdminDataGrid } from '@/hooks';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { 
   userColumns, 
   userFilters, 
@@ -29,7 +29,6 @@ interface UsersDataGridProps {
 
 export function UsersDataGrid({ initialData }: UsersDataGridProps) {
   const router = useRouter();
-  const { toast } = useToast();
   
   // Use the shared admin data grid hook
   const {
@@ -79,19 +78,15 @@ export function UsersDataGrid({ initialData }: UsersDataGridProps) {
         throw new Error(errorData.error || 'Failed to change user role');
       }
       
-      toast({
-        title: 'Role updated',
+      toast.success('Role updated', {
         description: `User role updated to ${newRole}`,
-        variant: 'success'
       });
       
       handleRefresh();
     } catch (error) {
       console.error('Error changing user role:', error);
-      toast({
-        title: 'Error',
+      toast.error('Error', {
         description: error instanceof Error ? error.message : 'Failed to change user role',
-        variant: 'destructive'
       });
     }
   };
@@ -117,19 +112,21 @@ export function UsersDataGrid({ initialData }: UsersDataGridProps) {
         throw new Error(errorData.error || `Failed to ${isActive ? 'activate' : 'deactivate'} user`);
       }
       
-      toast({
-        title: isActive ? 'User Activated' : 'User Deactivated',
-        description: isActive ? 'User has been activated' : 'User has been deactivated',
-        variant: isActive ? 'success' : 'default'
-      });
+      if (isActive) {
+        toast.success('User Activated', {
+          description: 'User has been activated',
+        });
+      } else {
+        toast('User Deactivated', {
+          description: 'User has been deactivated',
+        });
+      }
       
       handleRefresh();
     } catch (error) {
       console.error(`Error ${isActive ? 'activating' : 'deactivating'} user:`, error);
-      toast({
-        title: 'Error',
+      toast.error('Error', {
         description: error instanceof Error ? error.message : `Failed to ${isActive ? 'activate' : 'deactivate'} user`,
-        variant: 'destructive'
       });
     }
   };
@@ -154,17 +151,13 @@ export function UsersDataGrid({ initialData }: UsersDataGridProps) {
             if (selectedItems.length > 0) {
               try {
                 // Not implemented yet - will be added in another task
-                toast({
-                  title: 'Not Implemented',
+                toast('Not Implemented', {
                   description: 'Password reset functionality will be implemented in a future update',
-                  variant: 'default'
                 });
               } catch (err) {
                 console.error('Error resetting password:', err);
-                toast({
-                  title: 'Error',
+                toast.error('Error', {
                   description: 'Failed to reset password',
-                  variant: 'destructive'
                 });
               }
             }
@@ -181,10 +174,8 @@ export function UsersDataGrid({ initialData }: UsersDataGridProps) {
                 }
               } catch (err) {
                 console.error('Error deactivating users:', err);
-                toast({
-                  title: 'Error',
+                toast.error('Error', {
                   description: 'Failed to deactivate one or more users',
-                  variant: 'destructive'
                 });
               }
             }
@@ -201,10 +192,8 @@ export function UsersDataGrid({ initialData }: UsersDataGridProps) {
                 }
               } catch (err) {
                 console.error('Error activating users:', err);
-                toast({
-                  title: 'Error',
+                toast.error('Error', {
                   description: 'Failed to activate one or more users',
-                  variant: 'destructive'
                 });
               }
             }
@@ -235,7 +224,6 @@ export function UsersDataGrid({ initialData }: UsersDataGridProps) {
         <ActionBar
           actions={getActionHandlers()}
           selectedCount={selectedItems.length}
-          selectedItems={selectedItems}
         />
       </div>
       
@@ -253,7 +241,6 @@ export function UsersDataGrid({ initialData }: UsersDataGridProps) {
           totalItems,
           onPageChange: handlePageChange
         }}
-        selectable
         onSelectionChange={handleSelectionChange}
       />
     </div>

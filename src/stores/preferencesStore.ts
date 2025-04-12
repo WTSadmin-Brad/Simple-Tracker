@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { getUserPreferences, saveUserPreferences } from '@/lib/api/userApi';
 
 // User preferences interface
 interface Preferences {
@@ -27,6 +28,9 @@ interface Preferences {
 interface PreferencesState {
   // State
   preferences: Preferences;
+  isLoading: boolean;
+  error: string | null;
+  isSynced: boolean;
   
   // Actions
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
@@ -36,6 +40,10 @@ interface PreferencesState {
   addRecentTruck: (truckId: string) => void;
   addRecentJobsite: (jobsiteId: string) => void;
   clearRecentSelections: () => void;
+  
+  // Sync methods
+  syncPreferences: () => Promise<void>;
+  fetchPreferences: () => Promise<void>;
 }
 
 // Default preferences
@@ -62,7 +70,8 @@ const addRecentTruckAction = (truckId: string) => (set: any, get: any) => {
     preferences: { 
       ...preferences, 
       recentTrucks: updatedTrucks 
-    }
+    },
+    isSynced: false
   });
 };
 
@@ -79,8 +88,68 @@ const addRecentJobsiteAction = (jobsiteId: string) => (set: any, get: any) => {
     preferences: { 
       ...preferences, 
       recentJobsites: updatedJobsites 
-    }
+    },
+    isSynced: false
   });
+};
+
+// API action creators
+const syncPreferencesAction = () => async (set: any, get: any) => {
+  const { preferences, isSynced } = get();
+  
+  // Skip if preferences are already synced
+  if (isSynced) return;
+  
+  set({ isLoading: true, error: null });
+  
+  try {
+    // Save preferences to the API
+    const response = await saveUserPreferences(preferences);
+    
+    if (!response.success) {
+      throw new Error(response.message || 'Failed to save preferences');
+    }
+    
+    // Set synced flag when successful
+    set({ isLoading: false, isSynced: true });
+  } catch (error) {
+    console.error('Error syncing preferences:', error);
+    
+    set({
+      isLoading: false,
+      error: error instanceof Error ? error.message : 'Failed to sync preferences'
+    });
+  }
+};
+
+const fetchPreferencesAction = () => async (set: any) => {
+  set({ isLoading: true, error: null });
+  
+  try {
+    // Fetch preferences from the API
+    const response = await getUserPreferences();
+    
+    if (!response.success) {
+      throw new Error(response.message || 'Failed to fetch preferences');
+    }
+    
+    // Use preferences property (resource-specific) instead of generic data property
+    const userPreferences = response.preferences;
+    
+    // Merge with defaults in case API response is missing some fields
+    set({
+      preferences: { ...defaultPreferences, ...userPreferences },
+      isLoading: false,
+      isSynced: true
+    });
+  } catch (error) {
+    console.error('Error fetching preferences:', error);
+    
+    set({
+      isLoading: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch preferences'
+    });
+  }
 };
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -88,22 +157,29 @@ export const usePreferencesStore = create<PreferencesState>()(
     (set, get) => ({
       // Initial state
       preferences: defaultPreferences,
+      isLoading: false,
+      error: null,
+      isSynced: true,
       
       // Actions
       setTheme: (theme) => set(state => ({
-        preferences: { ...state.preferences, theme }
+        preferences: { ...state.preferences, theme },
+        isSynced: false
       })),
       
       setReducedMotion: (reducedMotion) => set(state => ({
-        preferences: { ...state.preferences, reducedMotion }
+        preferences: { ...state.preferences, reducedMotion },
+        isSynced: false
       })),
       
       setDefaultView: (defaultView) => set(state => ({
-        preferences: { ...state.preferences, defaultView }
+        preferences: { ...state.preferences, defaultView },
+        isSynced: false
       })),
       
       setNotificationsEnabled: (notificationsEnabled) => set(state => ({
-        preferences: { ...state.preferences, notificationsEnabled }
+        preferences: { ...state.preferences, notificationsEnabled },
+        isSynced: false
       })),
       
       addRecentTruck: (truckId) => addRecentTruckAction(truckId)(set, get),
@@ -115,8 +191,13 @@ export const usePreferencesStore = create<PreferencesState>()(
           ...state.preferences, 
           recentTrucks: [], 
           recentJobsites: [] 
-        }
-      }))
+        },
+        isSynced: false
+      })),
+      
+      // Sync methods
+      syncPreferences: () => syncPreferencesAction()(set, get),
+      fetchPreferences: () => fetchPreferencesAction()(set)
     }),
     {
       name: 'user-preferences-storage',
@@ -149,4 +230,12 @@ export const useRecentSelections = () => ({
   addRecentTruck: usePreferencesStore(state => state.addRecentTruck),
   addRecentJobsite: usePreferencesStore(state => state.addRecentJobsite),
   clearRecentSelections: usePreferencesStore(state => state.clearRecentSelections)
+});
+
+export const usePreferencesSync = () => ({
+  syncPreferences: usePreferencesStore(state => state.syncPreferences),
+  fetchPreferences: usePreferencesStore(state => state.fetchPreferences),
+  isLoading: usePreferencesStore(state => state.isLoading),
+  error: usePreferencesStore(state => state.error),
+  isSynced: usePreferencesStore(state => state.isSynced)
 });

@@ -28,12 +28,12 @@ interface WizardStepResponse {
   success: boolean;
   /** Optional message from the server */
   message?: string;
-  /** Optional data returned from the server */
-  data?: unknown;
   /** ID of the saved step */
   stepId?: string;
   /** Timestamp when the step was saved */
   savedAt?: string;
+  /** Step-specific data (resource-specific property) */
+  wizardStep?: any;
 }
 
 /**
@@ -48,6 +48,8 @@ interface CompleteWizardResponse {
   message?: string;
   /** URL to redirect to after completion */
   redirectUrl?: string;
+  /** Ticket data (resource-specific property) */
+  ticket?: any;
 }
 
 /**
@@ -352,8 +354,8 @@ export function useWizardApi(): UseWizardApiReturn {
   } | null> => {
     try {
       const response = await handleApiCall<void, { 
-        success: boolean; 
-        data?: { 
+        success: boolean;
+        wizardState?: { 
           stepData: any; 
           currentStep: number;
           lastUpdated: string;
@@ -368,11 +370,11 @@ export function useWizardApi(): UseWizardApiReturn {
         }
       );
       
-      if (response.success && response.data) {
+      if (response.success && response.wizardState) {
         return {
-          stepData: response.data.stepData,
-          currentStep: response.data.currentStep,
-          lastUpdated: response.data.lastUpdated
+          stepData: response.wizardState.stepData,
+          currentStep: response.wizardState.currentStep,
+          lastUpdated: response.wizardState.lastUpdated
         };
       }
       

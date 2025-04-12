@@ -108,7 +108,12 @@ export function useTrucks() {
         retryDelay: 1000,
       });
       
-      return response.trucks as Truck[];
+      // Check for success and use trucks property
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to fetch trucks');
+      }
+      
+      return response.trucks || [];
     } catch (err) {
       // Log the error
       errorHandler.logError(err, { 
@@ -148,7 +153,7 @@ export function useTrucks() {
         
         if (!result.ok) {
           if (result.status === 404) {
-            return { truck: null };
+            return { success: false, message: 'Truck not found', status: 404 };
           }
           
           const errorData = await result.json();
@@ -165,7 +170,16 @@ export function useTrucks() {
         retryDelay: 1000,
       });
       
-      return response.truck as Truck | null;
+      // Check for success and use truck property
+      if (!response.success) {
+        // If 404, just return null
+        if (response.status === 404) {
+          return null;
+        }
+        throw new Error(response.message || `Failed to fetch truck with ID ${id}`);
+      }
+      
+      return response.truck || null;
     } catch (err) {
       // Log the error
       errorHandler.logError(err, { 

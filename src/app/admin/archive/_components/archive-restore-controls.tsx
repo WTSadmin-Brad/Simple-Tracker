@@ -8,7 +8,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,7 @@ export function ArchiveRestoreControls({
   item,
   onConfirmRestore,
 }: ArchiveRestoreControlsProps) {
-  const { toast } = useToast();
+  // const { toast } = useToast(); // Removed, using direct import from sonner
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -51,10 +51,9 @@ export function ArchiveRestoreControls({
       setResult(result);
       
       if (result.success) {
-        toast({
-          title: 'Item Restored',
+        toast('Item Restored', {
           description: result.message || `${item.type} has been successfully restored.`,
-          variant: 'default',
+          // Removed variant: 'default' as it's implicit or handled by sonner's default styling
         });
         
         // Auto-close the dialog after a successful restore

@@ -21,7 +21,7 @@ import TrucksDataGrid from './_components/trucks-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'Truck Management | Admin | Simple Tracker',
-  description: 'Manage and review all trucks',
+  description: 'Manage and review all trucks'
 };
 
 export default async function AdminTrucksPage({

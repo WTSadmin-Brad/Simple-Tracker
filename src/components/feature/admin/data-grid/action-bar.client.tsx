@@ -8,11 +8,11 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { Button } from '@/components/ui/button.client';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.client';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, RefreshIcon, AlertCircleIcon } from 'lucide-react';
+import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, RefreshCwIcon, AlertCircleIcon } from 'lucide-react';
 
 export type ActionType = 'create' | 'edit' | 'delete' | 'export' | 'refresh' | 'custom';
 
@@ -52,7 +52,7 @@ export default function ActionBar({ actions, selectedCount = 0, position = 'top'
     edit: <PencilIcon className="h-4 w-4 mr-2" />,
     delete: <TrashIcon className="h-4 w-4 mr-2" />,
     export: <DownloadIcon className="h-4 w-4 mr-2" />,
-    refresh: <RefreshIcon className="h-4 w-4 mr-2" />,
+    refresh: <RefreshCwIcon className="h-4 w-4 mr-2" />,
     custom: null
   }), []);
 
@@ -119,7 +119,7 @@ export default function ActionBar({ actions, selectedCount = 0, position = 'top'
     } = action;
     
     const buttonIcon = icon || defaultIcons[type];
-    const buttonVariant = mapVariant(variant || defaultVariants[type]);
+    const buttonVariant = mapVariant((variant || defaultVariants[type]) as Action['variant']);
     const isDisabled = disabled || (requiresSelection && selectedCount === 0) || isLoading;
     
     const handleActionClick = () => {

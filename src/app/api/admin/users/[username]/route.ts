@@ -9,6 +9,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchUserByUsername, validateUserData, deleteUser } from '../helpers';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
+import { handleApiError } from '@/lib/api/middleware';
+import { NotFoundError, ValidationError, ErrorCodes } from '@/lib/errors/error-types';
 
 export async function GET(
   request: NextRequest,
@@ -22,28 +25,22 @@ export async function GET(
     
     // Return 404 if user not found
     if (!user) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: 'User not found' 
-        },
-        { status: 404 }
+      throw new NotFoundError(
+        'User not found',
+        ErrorCodes.DATA_NOT_FOUND,
+        404,
+        { username }
       );
     }
     
-    return NextResponse.json({
-      success: true,
-      data: user
-    });
-  } catch (error) {
-    console.error('Error fetching user details:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to retrieve user details' 
-      },
-      { status: 500 }
+    // Return standardized success response
+    return createSuccessResponse(
+      'User retrieved successfully',
+      user,
+      'user'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to retrieve user details');
   }
 }
 
@@ -58,25 +55,22 @@ export async function PUT(
     // Validate update data
     const validationResult = validateUserData(body);
     if (!validationResult.valid) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid update data',
-          details: validationResult.errors
-        },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid update data',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        validationResult.errors
       );
     }
     
     // Use helper function to check if user exists
     const existingUser = await fetchUserByUsername(username);
     if (!existingUser) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: 'User not found' 
-        },
-        { status: 404 }
+      throw new NotFoundError(
+        'User not found',
+        ErrorCodes.DATA_NOT_FOUND,
+        404,
+        { username }
       );
     }
     
@@ -84,25 +78,19 @@ export async function PUT(
     // 1. Update allowed fields based on request body
     // 2. Add updatedAt and updatedBy metadata
     
-    return NextResponse.json({
-      success: true,
-      message: `User ${username} updated successfully`,
-      data: {
+    // Return standardized success response
+    return createSuccessResponse(
+      `User updated successfully`,
+      {
         username,
         ...body,
         updatedAt: new Date().toISOString(),
         updatedBy: 'current-admin' // Would come from auth context
-      }
-    });
-  } catch (error) {
-    console.error('Error updating user:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to update user' 
       },
-      { status: 500 }
+      'user'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to update user');
   }
 }
 
@@ -117,31 +105,28 @@ export async function DELETE(
     const result = await deleteUser(username);
     
     if (!result.success) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: result.error || 'Failed to delete user'
-        },
-        { status: result.error === 'User not found' ? 404 : 500 }
-      );
+      if (result.error === 'User not found') {
+        throw new NotFoundError(
+          'User not found',
+          ErrorCodes.DATA_NOT_FOUND,
+          404,
+          { username }
+        );
+      } else {
+        throw new Error(result.error || 'Failed to delete user');
+      }
     }
     
-    return NextResponse.json({
-      success: true,
-      message: `User ${username} deleted successfully`,
-      data: {
+    // Return standardized success response
+    return createSuccessResponse(
+      `User deleted successfully`,
+      {
         username,
         deletedAt: result.deletedAt
-      }
-    });
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to delete user' 
       },
-      { status: 500 }
+      'user'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to delete user');
   }
 }

@@ -10,15 +10,20 @@
 
 import { NextResponse } from 'next/server';
 import { 
-  authenticateRequest, 
-  handleApiError 
+  withAdminRole, // Changed import
+  handleApiError
 } from '@/lib/api/middleware';
+import { AuthenticatedUser } from '@/types/api'; // Import AuthenticatedUser
+import { 
+  createSuccessResponse, 
+  createPaginatedResponse 
+} from '@/lib/api/responseUtils';
 import { getAuthAdmin, getFirestoreAdmin } from '@/lib/firebase/admin';
 import { 
   fetchJobsites, 
   createJobsite, 
   jobsiteNameExists,
-  JOBSITES_COLLECTION
+  // Removed incorrect import: JOBSITES_COLLECTION
 } from './helpers';
 import { 
   createJobsiteSchema, 
@@ -26,7 +31,9 @@ import {
   bulkUpdateJobsitesSchema, 
   jobsiteFilterSchema 
 } from '@/lib/validation/jobsiteSchemas';
-import { ForbiddenError, ValidationError, NotFoundError, ErrorCodes } from '@/lib/errors/error-types';
+import { ForbiddenError, ValidationError, NotFoundError, ErrorCodes } from '@/lib/errors'; // Assuming index.ts exports these
+// Define collection name locally
+const JOBSITES_COLLECTION = 'jobsites';
 
 /**
  * Verifies the user has admin role
@@ -41,8 +48,9 @@ async function verifyAdminRole(userId: string) {
   if (!customClaims.role || customClaims.role !== 'admin') {
     throw new ForbiddenError(
       'Admin access required',
-      ErrorCodes.AUTH_INSUFFICIENT_PERMISSIONS,
-      { 
+      ErrorCodes.AUTH_FORBIDDEN, // Correct Error Code
+      403, // Add missing status code
+      { // Details object
         requiredRole: 'admin',
         userRole: customClaims.role || 'none'
       }
@@ -58,12 +66,10 @@ async function verifyAdminRole(userId: string) {
  * @route GET /api/admin/jobsites
  * @authentication Required with admin role
  */
-export const GET = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const GET = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
+    // Admin role is verified by the wrapper
     return await handleGetJobsites(request);
   } catch (error) {
     return handleApiError(error, 'Failed to retrieve jobsites');
@@ -76,13 +82,11 @@ export const GET = authenticateRequest(async (userId, request) => {
  * @route POST /api/admin/jobsites
  * @authentication Required with admin role
  */
-export const POST = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const POST = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleCreateJobsite(userId, request);
+    // Admin role is verified by the wrapper
+    return await handleCreateJobsite(user.uid, request); // Pass admin uid
   } catch (error) {
     return handleApiError(error, 'Failed to create jobsite');
   }
@@ -94,13 +98,11 @@ export const POST = authenticateRequest(async (userId, request) => {
  * @route PUT /api/admin/jobsites
  * @authentication Required with admin role
  */
-export const PUT = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const PUT = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleUpdateJobsites(userId, request);
+    // Admin role is verified by the wrapper
+    return await handleUpdateJobsites(user.uid, request); // Pass admin uid
   } catch (error) {
     return handleApiError(error, 'Failed to update jobsites');
   }
@@ -112,13 +114,11 @@ export const PUT = authenticateRequest(async (userId, request) => {
  * @route DELETE /api/admin/jobsites
  * @authentication Required with admin role
  */
-export const DELETE = authenticateRequest(async (userId, request) => {
+// Updated to use withAdminRole and new handler signature
+export const DELETE = withAdminRole(async (request: Request, user: AuthenticatedUser) => {
   try {
-    // 1. Verify admin role
-    await verifyAdminRole(userId);
-    
-    // 2. Process the request
-    return await handleDeleteJobsite(userId, request);
+    // Admin role is verified by the wrapper
+    return await handleDeleteJobsite(user.uid, request); // Pass admin uid
   } catch (error) {
     return handleApiError(error, 'Failed to delete jobsite');
   }
@@ -147,14 +147,18 @@ async function handleGetJobsites(request: Request) {
   // 4. Use helper function to fetch jobsites with filtering
   const { jobsites, pagination } = await fetchJobsites(validatedFilters);
   
-  // 5. Return successful response
-  return NextResponse.json({
-    success: true,
-    message: 'Jobsites retrieved successfully',
-    count: jobsites.length,
+  // 5. Return successful response using utility function
+  return createPaginatedResponse(
+    'Jobsites retrieved successfully',
     jobsites,
-    pagination
-  });
+    'jobsites',
+    {
+      page: pagination.page || 1,
+      pageSize: pagination.pageSize || 10,
+      totalItems: pagination.total || 0, // Use 'total' property if that's what fetchJobsites returns
+      totalPages: pagination.totalPages || 1
+    }
+  );
 }
 
 /**
@@ -174,7 +178,7 @@ async function handleCreateJobsite(userId: string, request: Request) {
   if (await jobsiteNameExists(name)) {
     throw new ValidationError(
       'Jobsite name already exists',
-      ErrorCodes.VALIDATION_DUPLICATE_ENTRY,
+      ErrorCodes.DATA_ALREADY_EXISTS, // Correct Error Code
       409,
       { field: 'name', value: name }
     );
@@ -192,12 +196,13 @@ async function handleCreateJobsite(userId: string, request: Request) {
   // 4. Use helper to create new jobsite
   const newJobsite = await createJobsite(jobsiteData);
   
-  // 5. Return successful response
-  return NextResponse.json({
-    success: true,
-    message: 'Jobsite created successfully',
-    jobsite: newJobsite
-  });
+  // 5. Return successful response using utility function
+  return createSuccessResponse(
+    'Jobsite created successfully',
+    newJobsite,
+    'jobsite',
+    { status: 201 }
+  );
 }
 
 /**
@@ -252,14 +257,15 @@ async function handleUpdateJobsites(userId: string, request: Request) {
   // 8. Execute the batch
   await batch.commit();
   
-  // 9. Return successful response
-  return NextResponse.json({
-    success: true,
-    message: `${results.successful.length} jobsites updated successfully`,
-    updated: results.successful,
-    failed: results.failed.length > 0 ? results.failed : undefined,
-    timestamp: new Date().toISOString()
-  });
+  // 9. Return successful response using utility function
+  return createSuccessResponse(
+    `${results.successful.length} jobsites updated successfully`,
+    {
+      updated: results.successful,
+      failed: results.failed.length > 0 ? results.failed : undefined
+    },
+    'results'
+  );
 }
 
 /**
@@ -290,8 +296,9 @@ async function handleDeleteJobsite(userId: string, request: Request) {
   if (!jobsiteSnapshot.exists) {
     throw new NotFoundError(
       'Jobsite not found',
-      ErrorCodes.RESOURCE_NOT_FOUND,
-      { resourceType: 'jobsite', id: jobsiteId }
+      ErrorCodes.DATA_NOT_FOUND, // Correct Error Code
+      404, // Add missing status code
+      { resourceType: 'jobsite', id: jobsiteId } // Details object
     );
   }
   
@@ -302,11 +309,13 @@ async function handleDeleteJobsite(userId: string, request: Request) {
     deletedBy: userId
   });
   
-  // 4. Return successful response
-  return NextResponse.json({
-    success: true,
-    message: 'Jobsite deleted successfully',
-    id: jobsiteId,
-    deletedAt: new Date().toISOString()
-  });
+  // 4. Return successful response using utility function
+  return createSuccessResponse(
+    'Jobsite deleted successfully',
+    {
+      id: jobsiteId,
+      deletedAt: new Date().toISOString()
+    },
+    'jobsite'
+  );
 }

@@ -5,7 +5,13 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import workdayService from '@/lib/services/workdayService';
+import { 
+  getWorkdays, 
+  createWorkday, 
+  updateWorkday, 
+  getWorkdayById, 
+  deleteWorkday 
+} from '@/lib/api/workdayApi';
 
 // Workday interface
 interface Workday {
@@ -40,18 +46,19 @@ const startWorkdayAction = (workday: Omit<Workday, 'id' | 'status' | 'endTime'>)
     set({ isLoading: true, error: null });
     
     try {
-      // In a real implementation, this would call an API
-      // For now using a simulated delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const newWorkday = {
+      // Call the API to create a new workday
+      const response = await createWorkday({
         ...workday,
-        status: 'active' as const,
+        status: 'active',
         endTime: null
-      };
+      });
       
-      // In a real implementation, we would save to the backend
-      // const savedWorkday = await workdayService.startWorkday(newWorkday);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to start workday');
+      }
+      
+      // Use workday property (resource-specific) instead of generic data property
+      const newWorkday = response.workday;
       
       set({ 
         isLoading: false,
@@ -79,19 +86,20 @@ const endWorkdayAction = (notes: string) =>
     set({ isLoading: true, error: null });
     
     try {
-      // In a real implementation, this would call an API
-      // For now using a simulated delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const completedWorkday = {
+      // Call the API to update the workday
+      const response = await updateWorkday(currentWorkday.id!, {
         ...currentWorkday,
-        status: 'completed' as const,
+        status: 'completed',
         endTime: new Date().toISOString(),
         notes: notes || currentWorkday.notes
-      };
+      });
       
-      // In a real implementation, we would save to the backend
-      // const savedWorkday = await workdayService.endWorkday(currentWorkday.id, completedWorkday);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to end workday');
+      }
+      
+      // Use workday property (resource-specific) instead of generic data property
+      const completedWorkday = response.workday;
       
       set({ 
         isLoading: false,
@@ -113,13 +121,19 @@ const fetchRecentWorkdaysAction = () =>
     set({ isLoading: true, error: null });
     
     try {
-      // In a real implementation, this would call an API
-      // For now using a simulated delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Call the API to get recent workdays
+      const response = await getWorkdays({ 
+        limit: 10, 
+        sortField: 'date', 
+        sortDirection: 'desc' 
+      });
       
-      // Mock data - in a real implementation, we would fetch from the backend
-      // const recentWorkdays = await workdayService.getRecentWorkdays();
-      const recentWorkdays: Workday[] = [];
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to fetch recent workdays');
+      }
+      
+      // Use workdays property (resource-specific) instead of generic data property
+      const recentWorkdays = response.workdays || [];
       
       set({ 
         isLoading: false,

@@ -10,13 +10,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { AuthState, UserData, UserRole } from '../types/auth';
-import { getFirebaseAuth, getFirestoreClient } from '@/lib/firebase/client';
-import { useToast } from '@/components/ui/use-toast';
+import { signInWithCustomToken, signOut, onAuthStateChanged, User } from 'firebase/auth'; 
+import { UserData, UserRole } from '../types/auth'; 
+import { getAuthClient, getFirestoreClient } from '@/lib/firebase/client'; 
+import { toast } from 'sonner'; 
 import { errorHandler, ErrorCodes, AuthError } from '@/lib/errors';
-import { useAuthStore } from '@/stores/authStore';
+// Import the helper function from the store file
+import { createUserFromFirebaseUser } from '@/stores/authStore'; 
+// Import store and selectors/actions
+import {
+  useAuthStore,
+  useUser,
+  useIsAuthenticated,
+  useAuthLoading,
+  useAuthError
+} from '@/stores/authStore';
 
 // Token refresh buffer in milliseconds (5 minutes before expiration)
 const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000;
@@ -34,20 +42,16 @@ interface UseAuthReturn {
   isLoading: boolean;
   /** Current user data */
   user: UserData | null;
-  /** Authentication token */
-  token: string | null;
-  /** Token expiration timestamp */
-  expiresAt: number | null;
   /** Authentication error message */
   error: string | null;
-  /** Login with email and password */
-  login: (email: string, password: string) => Promise<boolean>;
+  /** Login with username and password */
+  login: (username: string, password: string) => Promise<boolean>;
   /** Logout the current user */
   logout: () => Promise<boolean>;
   /** Check if user has specific role(s) */
   hasRole: (role: UserRole | UserRole[]) => boolean;
   /** Refresh the authentication token */
-  refreshToken: () => Promise<boolean>;
+  // refreshToken: (force?: boolean) => Promise<boolean>; // Exposing might depend on final strategy
 }
 
 /**
@@ -56,131 +60,80 @@ interface UseAuthReturn {
  * @returns Authentication methods and state
  */
 export function useAuth(): UseAuthReturn {
-  const auth = getFirebaseAuth();
-  const firestore = getFirestoreClient();
+  const auth = getAuthClient(); 
+  const firestore = getFirestoreClient(); // Keep for potential future use in onAuthStateChanged if needed
   const router = useRouter();
-  const { toast } = useToast();
   
-  // Access the auth store
-  const {
-    isAuthenticated,
-    isLoading,
-    user,
-    token,
-    expiresAt,
-    error,
-    setAuth,
-    clearAuth,
-    setLoading,
-    setError,
-    setToken
-  } = useAuthStore();
+  // Use selectors to get state
+  const isAuthenticated = useIsAuthenticated();
+  const isLoading = useAuthLoading();
+  const user = useUser(); // This user is of type UserData | null
+  const error = useAuthError();
+  
+  // Get actions directly from the store instance for internal use in the hook
+  const { _setLoading, _setError, _clearAuth, _setToken, _setUser } = useAuthStore.getState();
 
   // Local state for tracking user activity
   const [lastActivity, setLastActivity] = useState<number>(Date.now());
 
-  /**
-   * Login function
-   * 
-   * @param email User email
-   * @param password User password
-   * @returns Promise resolving to success status
-   */
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    if (!auth) {
-      throw new AuthError(
-        'Authentication service is not available',
-        ErrorCodes.SERVICE_UNAVAILABLE,
-        503
-      );
+  // Rewritten login function for username/password -> custom token flow
+  const login = useCallback(async (username: string, password: string): Promise<boolean> => {
+    if (!auth) { 
+      _setError('Authentication service unavailable.'); 
+      return false;
     }
 
-    setLoading(true);
-    setError(null);
-    
+    _setLoading(true); 
+    _setError(null);   
+
     try {
-      // Sign in with Firebase auth
-      const userCredential = await errorHandler.withRetry(
-        () => signInWithEmailAndPassword(auth, email, password),
-        {
-          maxRetries: 2,
-          retryDelay: 1000,
-          shouldRetry: (error) => {
-            // Only retry for network issues, not for invalid credentials
-            const { code } = errorHandler.formatError(error);
-            return code.startsWith('network/') || code === ErrorCodes.SERVICE_UNAVAILABLE;
-          }
-        }
-      );
-      
-      // Get the Firebase user
-      const firebaseUser = userCredential.user;
-      
-      // Get the user's custom claims (role)
-      const idTokenResult = await firebaseUser.getIdTokenResult();
-      const role = idTokenResult.claims.role as UserRole || 'employee';
-      
-      // Get additional user data from Firestore
-      let userData: Partial<UserData> = {
-        id: firebaseUser.uid,
-        email: firebaseUser.email || undefined,
-        role
-      };
-      
-      if (firestore) {
-        try {
-          const userDoc = await getDoc(doc(firestore, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            const firestoreData = userDoc.data();
-            userData = {
-              ...userData,
-              name: firestoreData.name,
-              phone: firestoreData.phone,
-              jobTitle: firestoreData.jobTitle,
-              avatarUrl: firestoreData.avatarUrl,
-              createdAt: firestoreData.createdAt?.toDate(),
-              lastLogin: firestoreData.lastLogin?.toDate()
-            };
-          }
-        } catch (error) {
-          console.warn('Error fetching additional user data:', error);
-          // Continue without the additional data
-        }
-      }
-      
-      // Get fresh token
-      const newToken = await firebaseUser.getIdToken();
-      
-      // Calculate token expiration
-      const decodedToken = JSON.parse(atob(newToken.split('.')[1]));
-      const expirationTime = decodedToken.exp * 1000; // Convert to milliseconds
-      
-      // Store authentication in secure cookie (for server-side auth)
-      await fetch('/api/auth/session', {
+      // 1. Call the custom backend login endpoint
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ token: newToken })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
       });
-      
-      // Update auth store
-      setAuth({
-        isAuthenticated: true,
-        user: userData as UserData,
-        token: newToken,
-        expiresAt: expirationTime
-      });
-      
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = data.message || 'Invalid username or password.';
+        console.error('Login API error:', data);
+        _setError(errorMessage); 
+        toast.error("Login failed", { 
+          description: errorMessage,
+        });
+        return false;
+      }
+
+      // 2. Get the custom token from the response
+      const customToken = data.customToken;
+      if (!customToken) {
+        console.error('Login error: Custom token missing from API response.');
+        _setError('Login failed: Authentication response invalid.'); 
+        toast.error("Login failed", { 
+          description: "Received an invalid response from the server.",
+        });
+        return false;
+      }
+
+      // 3. Sign in with the custom token using Firebase Client SDK
+      const userCredential = await signInWithCustomToken(auth, customToken);
+      const firebaseUser = userCredential.user;
+
+      // 4. Get ID token result to access custom claims (role)
+      // Note: Role check here is primarily for immediate redirect logic.
+      // The onAuthStateChanged listener is the source of truth for the store state.
+      const idTokenResult = await firebaseUser.getIdTokenResult(true); 
+      const role = idTokenResult.claims.role as UserRole || 'employee';
+
       setLastActivity(Date.now());
-      
-      // Show success toast
-      toast({
-        title: "Login successful",
-        description: `Welcome${userData.name ? `, ${userData.name}` : ''}!`,
+
+      toast.success("Login successful", { 
+        description: `Welcome! Redirecting...`, 
       });
-      
-      // Redirect based on role
+
+      // Redirect based on role derived from claims
       const redirectUrl = role === 'admin' ? '/admin/dashboard' : '/employee/calendar';
       router.push(redirectUrl);
       
@@ -189,50 +142,38 @@ export function useAuth(): UseAuthReturn {
       const formattedError = errorHandler.formatError(err);
       const userMessage = errorHandler.getUserFriendlyMessage(err);
       
-      // Handle specific error cases
+      // Use store action to set error
       if (formattedError.code === ErrorCodes.AUTH_INVALID_CREDENTIALS) {
-        setError('Invalid email or password. Please try again.');
+        _setError('Invalid username or password. Please try again.'); 
       } else {
-        setError(userMessage);
+        _setError(userMessage);
       }
       
-      toast({
-        title: "Login failed",
+      toast.error("Login failed", { 
         description: userMessage,
-        variant: "destructive",
       });
       
-      errorHandler.logError(err, { 
+      errorHandler.logError(err, {
         operation: 'login',
-        email // Don't log the password!
+        username // Log username instead of email
       });
       
       return false;
     } finally {
-      setLoading(false);
+      _setLoading(false); // Use store action
     }
-  }, [auth, firestore, router, setAuth, setLoading, setError, toast]);
+  }, [auth, router, _setLoading, _setError, toast]); // Updated dependencies
 
-  /**
-   * Logout function
-   * 
-   * @returns Promise resolving to success status
-   */
   const logout = useCallback(async (): Promise<boolean> => {
-    setLoading(true);
+    _setLoading(true); 
     
     try {
       if (auth) {
         await signOut(auth);
       }
       
-      // Clear server-side session
-      await fetch('/api/auth/logout', {
-        method: 'POST'
-      });
-      
-      // Clear auth store
-      clearAuth();
+      // Clear auth store using action
+      _clearAuth(); 
       
       // Redirect to login
       router.push('/auth/login');
@@ -241,10 +182,8 @@ export function useAuth(): UseAuthReturn {
     } catch (err) {
       const userMessage = errorHandler.getUserFriendlyMessage(err);
       
-      toast({
-        title: "Logout issue",
+      toast.error("Logout issue", { 
         description: userMessage,
-        variant: "destructive",
       });
       
       errorHandler.logError(err, { 
@@ -252,21 +191,15 @@ export function useAuth(): UseAuthReturn {
       });
       
       // Force clear auth anyway
-      clearAuth();
+      _clearAuth(); 
       router.push('/auth/login');
       
       return false;
     } finally {
-      setLoading(false);
+      _setLoading(false); 
     }
-  }, [auth, router, clearAuth, setLoading, toast]);
+  }, [auth, router, _clearAuth, _setLoading, toast]); // Updated dependencies
 
-  /**
-   * Check if the current user has a specific role
-   * 
-   * @param role Role or array of roles to check
-   * @returns Boolean indicating if user has the specified role(s)
-   */
   const hasRole = useCallback((role: UserRole | UserRole[]): boolean => {
     if (!isAuthenticated || !user) {
       return false;
@@ -276,35 +209,19 @@ export function useAuth(): UseAuthReturn {
     return roles.includes(user.role);
   }, [isAuthenticated, user]);
 
-  /**
-   * Refresh the authentication token
-   * 
-   * @returns Promise resolving to success status
-   */
-  const refreshToken = useCallback(async (): Promise<boolean> => {
-    if (!auth?.currentUser || !token) {
+  // Internal refresh function, might not need to be exposed via UseAuthReturn
+  const refreshToken = useCallback(async (force: boolean = false): Promise<boolean> => {
+    const currentToken = useAuthStore.getState().token; 
+    if (!auth?.currentUser || (!force && !currentToken)) { // Adjusted condition slightly
       return false;
     }
     
     try {
-      // Get fresh token
-      const newToken = await auth.currentUser.getIdToken(true);
-      
-      // Calculate new expiration
+      const newToken = await auth.currentUser.getIdToken(true); // Force refresh
       const decodedToken = JSON.parse(atob(newToken.split('.')[1]));
-      const expirationTime = decodedToken.exp * 1000; // Convert to milliseconds
+      const expirationTime = decodedToken.exp * 1000; 
       
-      // Update server-side session
-      await fetch('/api/auth/session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ token: newToken })
-      });
-      
-      // Update token in store
-      setToken(newToken, expirationTime);
+      _setToken(newToken, expirationTime); 
       
       return true;
     } catch (err) {
@@ -312,244 +229,129 @@ export function useAuth(): UseAuthReturn {
         operation: 'refreshToken'
       });
       
-      // For refresh errors, don't show UI notifications unless they're critical
-      if (errorHandler.formatError(err).status === 401) {
-        // If unauthorized, force logout
-        toast({
-          title: "Session expired",
-          description: "Your session has expired. Please log in again.",
-          variant: "destructive",
+      const errorCode = (err as any)?.code;
+      if (errorCode === 'auth/user-token-expired' || errorCode === 'auth/invalid-id-token') {
+        toast.error("Session expired", { 
+          description: "Your session has expired or is invalid. Please log in again.",
         });
-        
-        logout();
+        await logout(); // Use await here
       }
       
       return false;
     }
-  }, [auth, token, setToken, logout, toast]);
+  }, [auth, _setToken, logout, toast]); // Updated dependencies
 
-  /**
-   * Initialize auth state from server session (if available)
-   * 
-   * @returns Promise resolving when initialization is complete
-   */
-  const initializeAuthFromSession = useCallback(async (): Promise<void> => {
-    if (isAuthenticated) {
-      return; // Already authenticated
-    }
-    
-    try {
-      setLoading(true);
-      
-      // Try to get session from server
-      const response = await fetch('/api/auth/session');
-      if (!response.ok) {
-        return;
-      }
-      
-      const data = await response.json();
-      if (!data.token) {
-        return;
-      }
-      
-      // If we have a Firebase user, use it
-      if (auth?.currentUser) {
-        // Validate token from session
-        const decodedToken = JSON.parse(atob(data.token.split('.')[1]));
-        const expirationTime = decodedToken.exp * 1000;
-        
-        if (Date.now() >= expirationTime) {
-          // Token is expired, refresh it
-          await refreshToken();
-        } else {
-          // Token is valid, use it
-          setToken(data.token, expirationTime);
-          
-          // Load user data
-          if (decodedToken.uid && firestore) {
-            try {
-              const userDoc = await getDoc(doc(firestore, 'users', decodedToken.uid));
-              if (userDoc.exists()) {
-                const userData = userDoc.data();
-                setAuth({
-                  isAuthenticated: true,
-                  user: {
-                    id: decodedToken.uid,
-                    email: decodedToken.email,
-                    role: decodedToken.role || 'employee',
-                    name: userData.name,
-                    phone: userData.phone,
-                    jobTitle: userData.jobTitle,
-                    avatarUrl: userData.avatarUrl,
-                    createdAt: userData.createdAt?.toDate(),
-                    lastLogin: userData.lastLogin?.toDate()
-                  },
-                  token: data.token,
-                  expiresAt: expirationTime
-                });
-              }
-            } catch (error) {
-              console.warn('Error fetching user data from Firestore:', error);
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Error initializing auth from session:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [auth, firestore, isAuthenticated, refreshToken, setAuth, setLoading, setToken]);
-
-  /**
-   * Track user activity for token refresh
-   */
   const trackActivity = useCallback((): void => {
     const now = Date.now();
-    
-    // Only update if significant time has passed to avoid unnecessary updates
     if (now - lastActivity > MIN_ACTIVITY_INTERVAL) {
       setLastActivity(now);
     }
   }, [lastActivity]);
 
-  // Initialize auth from Firebase
+  // Initialize auth from Firebase on mount
   useEffect(() => {
-    if (!auth) return;
+    if (!auth) return; 
     
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser && !isAuthenticated) {
-        try {
-          // Get token and role
-          const idTokenResult = await firebaseUser.getIdTokenResult();
-          const role = idTokenResult.claims.role as UserRole || 'employee';
-          
-          // Get additional user data
-          let userData: Partial<UserData> = {
-            id: firebaseUser.uid,
-            email: firebaseUser.email || undefined,
-            role
-          };
-          
-          if (firestore) {
-            try {
-              const userDoc = await getDoc(doc(firestore, 'users', firebaseUser.uid));
-              if (userDoc.exists()) {
-                const firestoreData = userDoc.data();
-                userData = {
-                  ...userData,
-                  name: firestoreData.name,
-                  phone: firestoreData.phone,
-                  jobTitle: firestoreData.jobTitle,
-                  avatarUrl: firestoreData.avatarUrl,
-                  createdAt: firestoreData.createdAt?.toDate(),
-                  lastLogin: firestoreData.lastLogin?.toDate()
-                };
-              }
-            } catch (error) {
-              console.warn('Error fetching additional user data:', error);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
+      _setLoading(true); 
+      if (firebaseUser) {
+        // Only update store if not already authenticated by this hook instance
+        // This prevents potential loops if onAuthStateChanged fires multiple times rapidly
+        if (!useAuthStore.getState().isAuthenticated) { 
+          try {
+            // Call the imported helper function to get UserData
+            const appUser: UserData | null = await createUserFromFirebaseUser(firebaseUser); 
+            const token = await firebaseUser.getIdToken();
+            const idTokenResult = await firebaseUser.getIdTokenResult(); // Don't need to force refresh here
+            const expirationTime = new Date(idTokenResult.expirationTime).getTime();
+
+            if (appUser) {
+              _setUser(appUser);
+              _setToken(token, expirationTime);
+              _setError(null);
+            } else {
+              console.error("Failed to create app user data from Firebase user.");
+              _clearAuth(); 
+              _setError("Failed to load user profile.");
             }
+          } catch (err) {
+            console.error('Error processing authenticated user state:', err);
+            _clearAuth(); 
+            _setError("Error processing login.");
+          } finally {
+            _setLoading(false);
           }
-          
-          // Get token
-          const token = await firebaseUser.getIdToken();
-          
-          // Calculate token expiration
-          const decodedToken = JSON.parse(atob(token.split('.')[1]));
-          const expirationTime = decodedToken.exp * 1000;
-          
-          // Update auth store
-          setAuth({
-            isAuthenticated: true,
-            user: userData as UserData,
-            token,
-            expiresAt: expirationTime
-          });
-        } catch (err) {
-          console.error('Error setting up authenticated user:', err);
-          clearAuth();
-        } finally {
-          setLoading(false);
+        } else {
+           // Already authenticated, likely just a token refresh event, ensure loading is false
+           _setLoading(false); 
         }
-      } else if (!firebaseUser) {
-        clearAuth();
-        setLoading(false);
+      } else {
+        // No Firebase user, clear auth state
+        _clearAuth();
+        _setLoading(false);
       }
     });
-    
-    // Try to initialize from session if no Firebase auth
-    if (!isAuthenticated) {
-      initializeAuthFromSession();
-    }
     
     return () => unsubscribe();
-  }, [auth, firestore, isAuthenticated, setAuth, clearAuth, setLoading, initializeAuthFromSession]);
+  // Dependencies: Only run on mount/unmount
+  }, [auth, firestore, _setUser, _setToken, _clearAuth, _setLoading, _setError]); 
 
-  // Set up token refresh
+  // Set up token refresh timer
   useEffect(() => {
-    if (!isAuthenticated || !expiresAt || !token) return;
-    
-    // Check if token is already expired
-    if (Date.now() >= expiresAt) {
-      refreshToken();
-      return;
+    const { expiresAt: currentExpiresAt, isAuthenticated: isAuthNow } = useAuthStore.getState(); 
+    if (!isAuthNow || !currentExpiresAt) return; 
+
+    const now = Date.now();
+    let refreshTimer: NodeJS.Timeout | undefined;
+
+    if (now >= currentExpiresAt) {
+      refreshToken(true); // Force refresh if already expired
+    } else {
+      const timeUntilRefresh = currentExpiresAt - TOKEN_REFRESH_BUFFER - now;
+      if (timeUntilRefresh > 0) {
+        refreshTimer = setTimeout(() => {
+          refreshToken(true); // Force refresh when buffer time is reached
+        }, timeUntilRefresh);
+      } else {
+         // Already within buffer, maybe refresh soon? Or rely on activity?
+         // For simplicity, let's rely on activity or next request needing token
+      }
     }
-    
-    // Set up refresh before expiration
-    const refreshTime = expiresAt - TOKEN_REFRESH_BUFFER;
-    const timeUntilRefresh = refreshTime - Date.now();
-    
-    if (timeUntilRefresh <= 0) {
-      // Refresh immediately if we're already within the buffer zone
-      refreshToken();
-      return;
-    }
-    
-    // Schedule refresh
-    const refreshTimer = setTimeout(() => {
-      refreshToken();
-    }, timeUntilRefresh);
     
     return () => clearTimeout(refreshTimer);
-  }, [isAuthenticated, token, expiresAt, refreshToken]);
+  // Rerun when isAuthenticated changes or refreshToken function reference changes
+  }, [isAuthenticated, refreshToken]); 
 
-  // Set up activity tracking for user-triggered refresh
+  // Set up activity tracking for potential proactive refresh
   useEffect(() => {
-    if (!isAuthenticated) return;
-    
-    // Track activity on user interactions
-    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'click'];
-    
+    const { expiresAt: currentExpiresAt } = useAuthStore.getState(); 
+    if (!isAuthenticated) return; 
+
     const handleActivity = () => {
       trackActivity();
-      
-      // If token is close to expiration, refresh it
-      if (expiresAt && Date.now() > expiresAt - TOKEN_REFRESH_BUFFER) {
-        refreshToken();
+      // Optional: Proactively refresh if near expiry on activity
+      if (currentExpiresAt && Date.now() > currentExpiresAt - TOKEN_REFRESH_BUFFER) {
+         refreshToken(true); // Force refresh on activity near expiry
       }
     };
     
-    activityEvents.forEach(event => {
-      window.addEventListener(event, handleActivity);
-    });
+    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'click'];
+    activityEvents.forEach(event => window.addEventListener(event, handleActivity));
     
     return () => {
-      activityEvents.forEach(event => {
-        window.removeEventListener(event, handleActivity);
-      });
+      activityEvents.forEach(event => window.removeEventListener(event, handleActivity));
     };
-  }, [isAuthenticated, expiresAt, trackActivity, refreshToken]);
+  // Rerun when isAuthenticated changes or callbacks change
+  }, [isAuthenticated, trackActivity, refreshToken]); 
 
   return {
     isAuthenticated,
     isLoading,
-    user,
-    token,
-    expiresAt,
-    error,
-    login,
+    user, // UserData | null from selector
+    error, // Error string | null from selector
+    login, // The refactored login action
     logout,
     hasRole,
-    refreshToken
+    // refreshToken // Not exposing refreshToken directly for now
   };
 }

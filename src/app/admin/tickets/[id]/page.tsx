@@ -14,11 +14,7 @@ import { ticketDetailFields, ticketDetailTabs } from '@/components/feature/admin
 import { getTicketById } from '@/lib/services/ticketService';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export const metadata: Metadata = {
-  title: 'Ticket Details | Admin | Simple Tracker',
-  description: 'View detailed ticket information',
-};
-
+// Removed static metadata export, using generateMetadata instead
 // This is a placeholder for dynamic metadata generation
 export async function generateMetadata({ params }: { params: { id: string } }) {
   return {
@@ -52,8 +48,7 @@ export default async function TicketDetailPage({ params }: { params: { id: strin
             title={`Ticket #${id}`}
             description={`Submitted on ${ticket.submissionDate.toLocaleDateString()}`}
             backLink="/admin/tickets"
-            detailFields={ticketDetailFields}
-            tabs={ticketDetailTabs}
+            sections={[{ title: 'Details', fields: ticketDetailFields }]} // Wrap fields in a section object
             fetchEntity={getTicketById}
           />
         </Suspense>

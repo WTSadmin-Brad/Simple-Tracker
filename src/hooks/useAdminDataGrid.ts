@@ -171,16 +171,24 @@ export function useAdminDataGrid<T>({
       
       const result = await response.json();
       
-      // Check for success status and handle Firebase Admin response format
+      // Check for success status and handle standardized response format
       if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch data');
+        throw new Error(result.message || 'Failed to fetch data');
       }
       
-      // Update state based on Firebase Admin API response format
+      // Determine which property to use based on endpoint
+      // This is a simplified approach - in a real implementation, would be more dynamic
+      const resourceName = apiEndpoint.split('/').pop() || 'items';
+      const items = result[resourceName] || [];
+      
+      // For pagination, use the standardized pagination structure
+      const pagination = result.pagination || {};
+      
+      // Update state based on standardized API response format
       setState(prev => ({
         ...prev,
-        data: result.data?.users || [],
-        totalItems: result.data?.pagination?.total || 0,
+        data: items,
+        totalItems: pagination.total || items.length,
         isLoading: false
       }));
       

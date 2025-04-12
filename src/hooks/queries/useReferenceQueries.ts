@@ -8,7 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import jobsiteService from '@/lib/services/jobsiteService';
 import truckService from '@/lib/services/truckService';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/sonner';
 import { errorHandler } from '@/lib/errors';
 import { queryKeys } from '@/lib/query/queryKeys';
 import { createMutationOptionsWithInvalidation, createRetryConfig } from '@/lib/query/mutationUtils';
@@ -25,7 +25,13 @@ const REFERENCE_DATA_STALE_TIME = 5 * 60 * 1000; // 5 minutes
 export function useGetJobsites(includeInactive = false) {
   return useQuery({
     queryKey: queryKeys.jobsites.lists(includeInactive),
-    queryFn: () => jobsiteService.getJobsites(includeInactive),
+    queryFn: async () => {
+      const response = await jobsiteService.getJobsites(includeInactive);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.jobsites; // Use specific 'jobsites' property instead of generic 'data'
+    },
     staleTime: REFERENCE_DATA_STALE_TIME,
     ...createRetryConfig(2),
   });
@@ -37,7 +43,13 @@ export function useGetJobsites(includeInactive = false) {
 export function useGetJobsiteById(id: string | null) {
   return useQuery({
     queryKey: queryKeys.jobsites.detail(id || ''),
-    queryFn: () => jobsiteService.getJobsiteById(id || ''),
+    queryFn: async () => {
+      const response = await jobsiteService.getJobsiteById(id || '');
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.jobsite; // Use specific 'jobsite' property instead of generic 'data'
+    },
     enabled: !!id, // Only run the query if an ID is provided
     staleTime: REFERENCE_DATA_STALE_TIME,
     ...createRetryConfig(2),
@@ -76,7 +88,11 @@ export function useUpdateJobsite() {
       success: "Jobsite updated successfully",
       error: "Failed to update jobsite",
       operationName: 'updateJobsite',
-      onSuccessCallback: (updatedJobsite) => {
+      onSuccessCallback: (response) => {
+        if (!response.success) return;
+        
+        const updatedJobsite = response.jobsite; // Use specific 'jobsite' property
+        
         // Invalidate specific jobsite detail
         queryClient.invalidateQueries({ 
           queryKey: queryKeys.jobsites.detail(updatedJobsite.id) 
@@ -95,7 +111,13 @@ export function useUpdateJobsite() {
 export function useGetTrucks(includeInactive = false) {
   return useQuery({
     queryKey: queryKeys.trucks.lists(includeInactive),
-    queryFn: () => truckService.getTrucks(includeInactive),
+    queryFn: async () => {
+      const response = await truckService.getTrucks(includeInactive);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.trucks; // Use specific 'trucks' property instead of generic 'data'
+    },
     staleTime: REFERENCE_DATA_STALE_TIME,
     ...createRetryConfig(2),
   });
@@ -107,7 +129,13 @@ export function useGetTrucks(includeInactive = false) {
 export function useGetTruckById(id: string | null) {
   return useQuery({
     queryKey: queryKeys.trucks.detail(id || ''),
-    queryFn: () => truckService.getTruckById(id || ''),
+    queryFn: async () => {
+      const response = await truckService.getTruckById(id || '');
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.truck; // Use specific 'truck' property instead of generic 'data'
+    },
     enabled: !!id, // Only run the query if an ID is provided
     staleTime: REFERENCE_DATA_STALE_TIME,
     ...createRetryConfig(2),
@@ -146,7 +174,11 @@ export function useUpdateTruck() {
       success: "Truck updated successfully",
       error: "Failed to update truck",
       operationName: 'updateTruck',
-      onSuccessCallback: (updatedTruck) => {
+      onSuccessCallback: (response) => {
+        if (!response.success) return;
+        
+        const updatedTruck = response.truck; // Use specific 'truck' property
+        
         // Invalidate specific truck detail
         queryClient.invalidateQueries({ 
           queryKey: queryKeys.trucks.detail(updatedTruck.id) 

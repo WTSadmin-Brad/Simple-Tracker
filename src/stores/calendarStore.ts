@@ -139,7 +139,11 @@ const createFetchMonthDataAction = (date: Date) => async (set: any, get: any) =>
     }
     
     // Fetch workdays for the month
-    const workdays = await workdayService.getWorkdaysForMonth(date);
+    const response = await workdayService.fetchWorkdaysForMonth(date.getFullYear(), date.getMonth() + 1);
+    
+    // Use workdays data directly from the service response
+    // (The workday service should handle the appropriate response format transformation)
+    const workdays = response;
     
     // Update the cache
     set({
@@ -178,7 +182,10 @@ const createWorkdayAction = (workday: Omit<Workday, 'id' | 'editableUntil' | 'us
       }
       
       // Create workday via API
-      const newWorkday = await workdayService.createWorkday(workday);
+      const response = await workdayService.createWorkday(workday);
+      
+      // The workday service should handle extracting the workday from the response
+      const newWorkday = response;
       
       // Update local cache
       const date = new Date(newWorkday.date);
@@ -246,7 +253,10 @@ const updateWorkdayAction = (id: string, workday: Partial<Omit<Workday, 'id' | '
       }
       
       // Update workday via API
-      const updatedWorkday = await workdayService.updateWorkday(id, workday);
+      const response = await workdayService.updateWorkday(id, workday);
+      
+      // The workday service should handle extracting the workday from the response
+      const updatedWorkday = response;
       
       // Update local cache
       const date = new Date(updatedWorkday.date);

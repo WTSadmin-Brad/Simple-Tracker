@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { handleApiError, authenticateRequest } from '@/lib/api/middleware';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
 import workdayService from '@/lib/services/workdayService';
 import { z } from 'zod';
 import { ValidationError, NotFoundError, ForbiddenError, ErrorCodes } from '@/lib/errors/error-types';
@@ -53,11 +54,12 @@ export const GET = authenticateRequest(async (
       );
     }
     
-    return NextResponse.json({
-      success: true,
-      message: 'Workday retrieved successfully',
-      ...workday,
-    });
+    // Return standardized response using our utility function
+    return createSuccessResponse(
+      'Workday retrieved successfully',
+      workday,
+      'workday'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to fetch workday');
   }
@@ -114,11 +116,12 @@ export const PUT = authenticateRequest(async (
       // Update workday
       const updatedWorkday = await workdayService.updateWorkday(id, data);
       
-      return NextResponse.json({
-        success: true,
-        message: 'Workday updated successfully',
-        ...updatedWorkday,
-      });
+      // Return standardized response using our utility function
+      return createSuccessResponse(
+        'Workday updated successfully',
+        updatedWorkday,
+        'workday'
+      );
     } catch (validationError) {
       if (validationError instanceof z.ZodError) {
         throw new ValidationError(
@@ -180,11 +183,12 @@ export const DELETE = authenticateRequest(async (
     // Delete workday
     await workdayService.deleteWorkday(id);
     
-    return NextResponse.json({
-      success: true,
-      message: 'Workday deleted successfully',
-      id
-    });
+    // Return standardized response using our utility function
+    return createSuccessResponse(
+      'Workday deleted successfully',
+      { id },
+      'workday'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to delete workday');
   }

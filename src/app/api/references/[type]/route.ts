@@ -6,6 +6,7 @@
 
 import { NextResponse } from 'next/server';
 import { authenticateRequest, handleApiError } from '@/lib/api/middleware';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
 import { fetchActiveTrucks, fetchAllTrucks } from '../trucks/helpers';
 import { fetchActiveJobsites, fetchAllJobsites } from '../jobsites/helpers';
 import { ForbiddenError, NotFoundError, ValidationError, ErrorCodes } from '@/lib/errors/error-types';
@@ -131,13 +132,13 @@ async function handleTrucks(includeInactive: boolean) {
     const trucks = includeInactive 
       ? await fetchAllTrucks()
       : await fetchActiveTrucks();
-      
-    return NextResponse.json({ 
-      success: true,
-      message: 'Trucks fetched successfully',
-      count: trucks.length,
-      trucks
-    });
+    
+    // Return standardized response using our utility function
+    return createSuccessResponse(
+      'Trucks fetched successfully',
+      trucks,
+      'trucks'
+    );
   } catch (error) {
     throw error; // Will be caught by the main try/catch
   }
@@ -154,13 +155,13 @@ async function handleJobsites(includeInactive: boolean) {
     const jobsites = includeInactive
       ? await fetchAllJobsites()
       : await fetchActiveJobsites();
-      
-    return NextResponse.json({ 
-      success: true,
-      message: 'Jobsites fetched successfully',
-      count: jobsites.length,
-      jobsites
-    });
+    
+    // Return standardized response using our utility function
+    return createSuccessResponse(
+      'Jobsites fetched successfully',
+      jobsites,
+      'jobsites'
+    );
   } catch (error) {
     throw error; // Will be caught by the main try/catch
   }
@@ -175,11 +176,12 @@ async function handleUserPreferencesGet(userId: string) {
   try {
     const preferences = await getUserPreferences(userId);
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'User preferences fetched successfully',
-      preferences
-    });
+    // Return standardized response using our utility function
+    return createSuccessResponse(
+      'User preferences fetched successfully',
+      preferences,
+      'preferences'
+    );
   } catch (error) {
     throw error; // Will be caught by the main try/catch
   }
@@ -213,11 +215,12 @@ async function handleUserPreferencesPost(userId: string, request: Request) {
     // Update user preferences
     const updatedPreferences = await updateUserPreferences(userId, body);
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'User preferences updated successfully',
-      preferences: updatedPreferences
-    });
+    // Return standardized response using our utility function
+    return createSuccessResponse(
+      'User preferences updated successfully',
+      updatedPreferences,
+      'preferences'
+    );
   } catch (error) {
     throw error; // Will be caught by the main try/catch
   }

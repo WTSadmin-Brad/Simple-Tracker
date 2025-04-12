@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { handleApiError, authenticateRequest } from '@/lib/api/middleware';
+import { createWizardStepResponse, createSuccessResponse } from '@/lib/api/responseUtils';
 import { 
   basicInfoSchema, 
   categoriesSchema, 
@@ -250,16 +251,16 @@ async function handleBasicInfo(data: BasicInfoData, request: Request, userId: st
       jobsiteName: data.jobsiteId, // In a real app, would fetch the name
     });
     
-    // Return success response
-    return NextResponse.json({ 
-      success: true,
-      message: 'Basic info saved successfully',
-      step: 1,
-      date: data.date,
-      truckId: data.truckId,
-      jobsiteId: data.jobsiteId,
-      updatedAt: new Date().toISOString()
-    });
+    // Return success response using utility function
+    return createWizardStepResponse(
+      'Basic info saved successfully',
+      1,
+      {
+        date: data.date,
+        jobsiteId: data.jobsiteId,
+        truckId: data.truckId
+      }
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to save basic info');
   }
@@ -283,16 +284,19 @@ async function handleCategories(data: CategoriesData, request: Request, userId: 
     // Calculate total count
     const totalCount = calculateTotalCount(data);
     
+    // Map categories to the standardized format
+    const categories = {
+      hangers: data.category1 || 0,
+      leaner6To12: data.category2 || 0,
+      leaner13To24: data.category3 || 0,
+      leaner25To36: data.category4 || 0,
+      leaner37To48: data.category5 || 0,
+      leaner49Plus: data.category6 || 0,
+    };
+    
     // Save wizard state using ticket service
     await ticketService.saveWizardState(userId, 2, {
-      categories: {
-        hangers: data.category1 || 0,
-        leaner6To12: data.category2 || 0,
-        leaner13To24: data.category3 || 0,
-        leaner25To36: data.category4 || 0,
-        leaner37To48: data.category5 || 0,
-        leaner49Plus: data.category6 || 0,
-      },
+      categories,
       hangers: data.category1 || 0,
       leaner6To12: data.category2 || 0,
       leaner13To24: data.category3 || 0,
@@ -301,22 +305,15 @@ async function handleCategories(data: CategoriesData, request: Request, userId: 
       leaner49Plus: data.category6 || 0,
     });
     
-    // Return success response
-    return NextResponse.json({ 
-      success: true,
-      message: 'Categories saved successfully',
-      step: 2,
-      totalCount,
-      categories: {
-        hangers: data.category1 || 0,
-        leaner6To12: data.category2 || 0,
-        leaner13To24: data.category3 || 0,
-        leaner25To36: data.category4 || 0,
-        leaner37To48: data.category5 || 0,
-        leaner49Plus: data.category6 || 0,
-      },
-      updatedAt: new Date().toISOString()
-    });
+    // Return success response using utility function
+    return createWizardStepResponse(
+      'Categories saved successfully',
+      2,
+      {
+        categories,
+        totalCount
+      }
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to save categories');
   }
@@ -349,18 +346,21 @@ async function handleImageUpload(data: ImageUploadData, request: Request, userId
       ),
     });
     
-    // Return success response
-    return NextResponse.json({ 
-      success: true,
-      message: 'Images saved successfully',
-      step: 3,
-      imageCount: data.images.length,
-      images: data.images.map(img => ({
-        id: img.id,
-        url: img.url
-      })),
-      updatedAt: new Date().toISOString()
-    });
+    // Format image data for response
+    const images = data.images.map(img => ({
+      id: img.id,
+      url: img.url
+    }));
+    
+    // Return success response using utility function
+    return createWizardStepResponse(
+      'Images saved successfully',
+      3,
+      {
+        images,
+        imageCount: images.length
+      }
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to save images');
   }
@@ -405,12 +405,16 @@ async function handleCompletion(data: CompleteWizardData, request: Request, user
     // Clear the wizard state after successful submission
     await ticketService.clearWizardState(userId);
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Ticket created successfully',
-      id: result.ticketId,
-      submittedAt: new Date().toISOString()
-    });
+    // Return success response using utility function
+    return createSuccessResponse(
+      'Ticket created successfully',
+      {
+        id: result.ticketId,
+        submittedAt: new Date().toISOString()
+      },
+      'ticket',
+      { status: 201 }
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to create ticket');
   }

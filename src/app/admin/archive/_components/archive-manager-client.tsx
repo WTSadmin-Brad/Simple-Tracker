@@ -12,7 +12,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -40,7 +40,7 @@ const DEFAULT_PAGINATION = {
 };
 
 export function ArchiveManagerClient() {
-  const { toast } = useToast();
+  // const { toast } = useToast(); // Removed, using direct import from sonner
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -256,10 +256,9 @@ export function ArchiveManagerClient() {
   // Handler for viewing all images for a ticket
   const handleViewImages = (ticketId: string) => {
     // Implementation for viewing all images for a ticket
-    toast({
-      title: 'View Images',
+    toast('View Images', {
       description: `Viewing images for ticket ${ticketId}`,
-      variant: 'default',
+      // Removed variant: 'default' as it's implicit or handled by sonner's default styling
     });
     
     // Close the detail dialog

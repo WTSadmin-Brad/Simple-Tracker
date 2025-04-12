@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getAuthAdmin, getFirestoreAdmin } from '@/lib/firebase/admin';
 import { handleApiError } from '@/lib/api/middleware';
-import { ApiResponse } from '@/types/api';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
 import { UserData } from '@/types/auth';
 
 // Cookie configuration
@@ -18,7 +18,7 @@ const AUTH_COOKIE = '__session';
 /**
  * GET handler for current user information
  */
-export async function GET(request: Request): Promise<NextResponse<ApiResponse<UserData>>> {
+export async function GET(request: Request): Promise<NextResponse> {
   try {
     // Get the session cookie
     const sessionCookie = cookies().get(AUTH_COOKIE)?.value;
@@ -28,7 +28,13 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse<Us
       return NextResponse.json(
         {
           success: false,
-          error: 'Not authenticated'
+          message: 'Not authenticated',
+          error: {
+            code: 'auth/not-authenticated',
+            status: 401,
+            details: null
+          },
+          timestamp: new Date().toISOString()
         },
         { status: 401 }
       );
@@ -61,10 +67,11 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse<Us
       };
       
       // Return success response with user data
-      return NextResponse.json({
-        success: true,
-        data: user
-      });
+      return createSuccessResponse(
+        'User information retrieved successfully',
+        user,
+        'user'
+      );
     } catch (error) {
       console.error('Session validation error:', error);
       
@@ -75,7 +82,13 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse<Us
       return NextResponse.json(
         {
           success: false,
-          error: 'Session expired'
+          message: 'Session expired',
+          error: {
+            code: 'auth/session-expired',
+            status: 401,
+            details: null
+          },
+          timestamp: new Date().toISOString()
         },
         { status: 401 }
       );

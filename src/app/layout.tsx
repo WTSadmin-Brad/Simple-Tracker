@@ -1,21 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import AppProviders from "@/components/providers/app-providers.client";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+// GeistSans and GeistMono are imported directly with variable support
 
 export const metadata: Metadata = {
   title: "Simple Tracker",
-  description: "Mobile-first PWA for field workers to log workdays and submit tickets",
+  description: "Mobile-first PWA for field workers to log workdays and submit tickets"
 };
 
 export default function RootLayout({
@@ -26,7 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${GeistSans.variable} ${GeistMono.variable} font-sans antialiased`}
       >
         <AppProviders>
           {children}

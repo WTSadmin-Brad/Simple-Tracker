@@ -4,76 +4,82 @@
  */
 
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/auth';
-import { verifyAdminRole } from '@/lib/auth/verify-admin';
-import { db } from '@/lib/firebase';
+import { getFirestoreAdmin, getStorageAdmin, verifyIdToken } from '@/lib/firebase/admin'; // Corrected Firebase admin import + verifyIdToken
 import { doc, getDoc, deleteDoc } from 'firebase/firestore';
-import { storage } from '@/lib/firebase';
+// Removed old auth imports, replaced by middleware below
 import { ref, deleteObject } from 'firebase/storage';
 import { deleteExportSchema } from '@/lib/schemas/exportSchemas';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
+import { handleApiError } from '@/lib/api/middleware'; // Keep handleApiError
+import { AuthError } from '@/lib/errors/error-types'; // Import AuthError
+import { ValidationError, ForbiddenError, NotFoundError, ErrorCodes } from '@/lib/errors/error-types';
 
 export async function DELETE(request: Request) {
   try {
     // Authenticate user
-    const session = await auth();
-    if (!session || !session.user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    // Authenticate user and verify admin role using verifyIdToken
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new AuthError('Authentication required', ErrorCodes.AUTH_INVALID_TOKEN, 401);
+    }
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await verifyIdToken(token); // Throws on invalid/expired token
+
+    // Check for admin role
+    if (decodedToken.role !== 'admin') {
+      throw new ForbiddenError('Admin access required', ErrorCodes.AUTH_FORBIDDEN, 403);
     }
     
-    // Verify admin role
-    const isAdmin = await verifyAdminRole(session.user.id);
-    if (!isAdmin) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
+    // Use decodedToken.uid instead of session.user.id
+    const userId = decodedToken.uid;
     
     // Parse and validate request body
     const body = await request.json();
     const validationResult = deleteExportSchema.safeParse(body);
     
     if (!validationResult.success) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: 'Invalid request data',
-          errors: validationResult.error.errors
-        },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid request data',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        validationResult.error.errors
       );
     }
     
     const { id } = validationResult.data;
     
-    // Get export document
+    // Get export document using getFirestoreAdmin()
+    const db = getFirestoreAdmin();
     const exportDocRef = doc(db, 'exports', id);
     const exportDoc = await getDoc(exportDocRef);
     
     if (!exportDoc.exists()) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: 'Export not found'
-        },
-        { status: 404 }
+      throw new NotFoundError(
+        'Export not found',
+        ErrorCodes.DATA_NOT_FOUND,
+        404,
+        { exportId: id }
       );
     }
     
     const exportData = exportDoc.data();
     
-    // Verify the export belongs to the user
-    if (exportData.userId !== session.user.id) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: 'You do not have permission to delete this export'
-        },
-        { status: 403 }
+    // Verify the export belongs to the user using userId from decodedToken
+    // Verify the export belongs to the user using userId from decodedToken (userId defined above)
+    if (exportData.userId !== userId) {
+      throw new ForbiddenError(
+        'You do not have permission to delete this export',
+        ErrorCodes.AUTH_FORBIDDEN, // Corrected error code
+        403,
+        { resourceType: 'export', id: id }
       );
     }
     
     // Delete the storage file if path exists
     if (exportData.storagePath) {
       try {
-        const storageRef = ref(storage, exportData.storagePath);
+        const storage = getStorageAdmin(); // Get storage instance
+        const storageRef = ref(storage.bucket().name ? storage.bucket() : storage.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET), exportData.storagePath); // Ensure bucket is referenced correctly
         await deleteObject(storageRef);
       } catch (error) {
         console.error('Error deleting export file from storage:', error);
@@ -81,21 +87,19 @@ export async function DELETE(request: Request) {
       }
     }
     
-    // Delete the export document
+    // Delete the export document (db instance already obtained)
     await deleteDoc(exportDocRef);
     
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Export deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting export:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        message: 'Failed to delete export'
+    // Return standardized success response
+    return createSuccessResponse(
+      'Export deleted successfully',
+      {
+        id,
+        deletedAt: new Date().toISOString()
       },
-      { status: 500 }
+      'export'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to delete export');
   }
 }

@@ -9,6 +9,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchTruckById, validateTruckData, truckNumberExists } from '../helpers';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
+import { handleApiError } from '@/lib/api/middleware';
+import { NotFoundError, ValidationError, ErrorCodes } from '@/lib/errors/error-types';
 
 export async function GET(
   request: NextRequest,
@@ -22,28 +25,22 @@ export async function GET(
     
     // Return 404 if truck not found
     if (!truck) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Truck not found' 
-        },
-        { status: 404 }
+      throw new NotFoundError(
+        'Truck not found',
+        ErrorCodes.DATA_NOT_FOUND,
+        404,
+        { id }
       );
     }
     
-    return NextResponse.json({
-      success: true,
-      data: truck
-    });
-  } catch (error) {
-    console.error('Error fetching truck details:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to retrieve truck details' 
-      },
-      { status: 500 }
+    // Return standardized success response
+    return createSuccessResponse(
+      'Truck retrieved successfully',
+      truck,
+      'truck'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to retrieve truck details');
   }
 }
 
@@ -58,13 +55,11 @@ export async function PUT(
     // Validate update data
     const validationResult = validateTruckData(body);
     if (!validationResult.valid) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid update data',
-          details: validationResult.errors
-        },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid update data',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        validationResult.errors
       );
     }
     
@@ -80,24 +75,18 @@ export async function PUT(
     // 2. Update allowed fields
     // 3. Add updatedAt timestamp
     
-    return NextResponse.json({
-      success: true,
-      message: `Truck ${id} updated successfully`,
-      data: {
+    // Return standardized success response
+    return createSuccessResponse(
+      `Truck updated successfully`,
+      {
         id,
         ...body,
         updatedAt: new Date().toISOString()
-      }
-    });
-  } catch (error) {
-    console.error('Error updating truck:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to update truck' 
       },
-      { status: 500 }
+      'truck'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to update truck');
   }
 }
 
@@ -112,22 +101,16 @@ export async function DELETE(
     // 1. Check if truck exists before attempting to delete
     // 2. Consider soft-delete by setting active=false instead
     
-    return NextResponse.json({
-      success: true,
-      message: `Truck ${id} deleted successfully`,
-      data: {
+    // Return standardized success response
+    return createSuccessResponse(
+      `Truck deleted successfully`,
+      {
         id,
         deletedAt: new Date().toISOString()
-      }
-    });
-  } catch (error) {
-    console.error('Error deleting truck:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to delete truck' 
       },
-      { status: 500 }
+      'truck'
     );
+  } catch (error) {
+    return handleApiError(error, 'Failed to delete truck');
   }
 }

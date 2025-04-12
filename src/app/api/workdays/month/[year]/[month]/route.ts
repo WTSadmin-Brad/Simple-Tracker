@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { handleApiError, authenticateRequest } from '@/lib/api/middleware';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
 import workdayService from '@/lib/services/workdayService';
 import { ValidationError, ErrorCodes } from '@/lib/errors';
 
@@ -48,10 +49,12 @@ export const GET = authenticateRequest(async (
     // Get workdays for the specified month
     const workdays = await workdayService.fetchWorkdaysForMonth(yearNum, monthNum, userId);
     
-    return NextResponse.json({
-      success: true,
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Workdays for month retrieved successfully',
       workdays,
-    });
+      'workdays'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to fetch workdays for month');
   }

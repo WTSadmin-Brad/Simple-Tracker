@@ -56,5 +56,16 @@ service firebase.storage {
     match /admin/{allPaths=**} {
       allow read, write: if isAdmin();
     }
+    
+    // Exported files (Admin access only)
+    match /exports/{exportType}/{fileName} {
+      allow read, write: if isAdmin();
+    }
+    
+    // Archived files (Admin access only)
+    match /archives/{archiveType}/{originalId}/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
   }
 }

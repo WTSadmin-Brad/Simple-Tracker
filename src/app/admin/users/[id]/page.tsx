@@ -14,11 +14,7 @@ import { userDetailFields, userDetailTabs } from '@/components/feature/admin/con
 import { getUserById } from '@/lib/services/userService';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export const metadata: Metadata = {
-  title: 'User Details | Admin | Simple Tracker',
-  description: 'View detailed user information',
-};
-
+// Removed static metadata export, using generateMetadata instead
 // Generate dynamic metadata based on user ID
 export async function generateMetadata({ params }: { params: { id: string } }) {
   return {
@@ -40,7 +36,7 @@ export default async function UserDetailPage({ params }: { params: { id: string 
   return (
     <div className="container mx-auto px-4 py-8">
       <AdminHeader 
-        title={`User: ${user.name}`} 
+        title={`User: ${user.displayName}`} // Use displayName instead of name
         backLink="/admin/users"
       />
       
@@ -49,11 +45,10 @@ export default async function UserDetailPage({ params }: { params: { id: string 
           <EntityDetailView
             entityId={id}
             entityType="User"
-            title={`User: ${user.name}`}
+            title={`User: ${user.displayName}`} // Use displayName instead of name
             description={`Role: ${user.role}`}
             backLink="/admin/users"
-            detailFields={userDetailFields}
-            tabs={userDetailTabs}
+            sections={[{ title: 'Details', fields: userDetailFields }]} // Wrap fields, rename prop, remove tabs
             fetchEntity={getUserById}
           />
         </Suspense>

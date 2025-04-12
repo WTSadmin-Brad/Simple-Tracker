@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { handleApiError, authenticateRequest } from '@/lib/api/middleware';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
 import { getStorageAdmin, getFirestoreAdmin } from '@/lib/firebase/admin';
 import { ValidationError, NotFoundError, UnauthorizedError, ErrorCodes } from '@/lib/errors/error-types';
 import { 
@@ -189,12 +190,12 @@ async function handleGetImages(request: Request, userId: string) {
       }
     }
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Images retrieved successfully',
-      count: images.length,
-      images
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Images retrieved successfully',
+      images,
+      'images'
+    );
   } catch (error) {
     throw error; // Let the main handler catch and format the error
   }
@@ -325,15 +326,19 @@ async function handleUploadImage(request: Request, userId: string) {
       updatedAt: new Date().toISOString()
     });
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Image uploaded successfully',
-      id: filePath,
-      url,
-      fileName: file.name,
-      contentType: file.type,
-      size: file.size
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Image uploaded successfully',
+      {
+        id: filePath,
+        url,
+        fileName: file.name,
+        contentType: file.type,
+        size: file.size
+      },
+      'image',
+      { status: 201 }
+    );
   } catch (error) {
     throw error; // Let the main handler catch and format the error
   }
@@ -426,12 +431,15 @@ async function handleDeleteImage(request: Request, userId: string) {
       updatedAt: new Date().toISOString()
     });
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Image deleted successfully',
-      id: imagePath.split('/').pop() || imagePath,
-      path: imagePath
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Image deleted successfully',
+      {
+        id: imagePath.split('/').pop() || imagePath,
+        path: imagePath
+      },
+      'image'
+    );
   } catch (error) {
     throw error; // Let the main handler catch and format the error
   }
@@ -564,14 +572,18 @@ async function handleConvertTempImage(userId: string, ticketId: string, tempId: 
     // Delete temp image document from Firestore
     await db.collection(TEMP_IMAGES_COLLECTION).doc(tempId).delete();
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Temporary image converted successfully',
-      id: permanentFilePath,
-      url,
-      originalFileName: tempImageData.filename,
-      size: tempImageData.size
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Temporary image converted successfully',
+      {
+        id: permanentFilePath,
+        url,
+        originalFileName: tempImageData.filename,
+        size: tempImageData.size
+      },
+      'image',
+      { status: 201 }
+    );
   } catch (error) {
     throw error; // Let the main handler catch and format the error
   }
@@ -615,12 +627,12 @@ async function handleGetTempImages(request: Request, userId: string) {
       images.push(doc.data() as TempImageMetadata);
     });
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Temporary images retrieved successfully',
-      count: images.length,
-      images
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Temporary images retrieved successfully',
+      images,
+      'images'
+    );
   } catch (error) {
     throw error; // Let the main handler catch and format the error
   }
@@ -736,15 +748,19 @@ async function handleUploadTempImage(request: Request, userId: string) {
     const db = getFirestoreAdmin();
     await db.collection(TEMP_IMAGES_COLLECTION).doc(imageId).set(metadata);
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Temporary image uploaded successfully',
-      id: imageId,
-      url,
-      fileName: file.name,
-      size: file.size,
-      expiresAt: calculateExpirationTime()
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Temporary image uploaded successfully',
+      {
+        id: imageId,
+        url,
+        fileName: file.name,
+        size: file.size,
+        expiresAt: calculateExpirationTime()
+      },
+      'image',
+      { status: 201 }
+    );
   } catch (error) {
     throw error; // Let the main handler catch and format the error
   }
@@ -823,11 +839,12 @@ async function handleDeleteTempImage(request: Request, userId: string) {
     // Delete document from Firestore
     await db.collection(TEMP_IMAGES_COLLECTION).doc(imageId).delete();
     
-    return NextResponse.json({ 
-      success: true,
-      message: 'Temporary image deleted successfully',
-      id: imageId
-    });
+    // Return standardized response using utility function
+    return createSuccessResponse(
+      'Temporary image deleted successfully',
+      { id: imageId },
+      'image'
+    );
   } catch (error) {
     throw error; // Let the main handler catch and format the error
   }

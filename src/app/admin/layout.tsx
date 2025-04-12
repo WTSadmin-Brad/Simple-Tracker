@@ -15,7 +15,7 @@ import PathProvider from './_components/path-provider.client';
 
 export const metadata = {
   title: 'Admin | Simple Tracker',
-  description: 'Administration portal for Simple Tracker',
+  description: 'Administration portal for Simple Tracker'
 };
 
 export default function AdminLayout({

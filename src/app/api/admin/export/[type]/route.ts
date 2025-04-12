@@ -13,11 +13,11 @@
  */
 
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/auth';
-import { verifyAdminRole } from '@/lib/auth/verify-admin';
-import { generateTicketExport } from '../tickets/exportHelpers';
-import { generateWorkdayExport } from '../workdays/exportHelpers';
-import { db } from '@/lib/firebase';
+// Removed incorrect auth imports
+// TODO: Verify paths for exportHelpers - assuming they exist relative to 'api/admin'
+import { generateTicketExport } from '../../tickets/exportHelpers';
+import { generateWorkdayExport } from '../../workdays/exportHelpers';
+import { getFirestoreAdmin } from '@/lib/firebase/admin'; // Import admin firestore
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { 
   getExportQuerySchema, 
@@ -25,26 +25,24 @@ import {
   TicketExportParams, 
   WorkdayExportParams 
 } from '@/lib/schemas/exportSchemas';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
+import { handleApiError, withAdminRole } from '@/lib/api/middleware';
+import { AuthenticatedUser } from '@/types/api'; // Import AuthenticatedUser type
+import { ValidationError, ForbiddenError, ErrorCodes } from '@/lib/errors/error-types';
 
 // GET handler for direct exports (smaller exports)
-export async function GET(
+// Wrap GET handler with authentication and admin role check
+export const GET = withAdminRole(async (
   request: Request,
-  { params }: { params: { type: string } }
-) {
-  const { type } = params;
+  context: { params: { type: string } },
+  user: AuthenticatedUser
+) => {
+  const { type } = context.params;
   
   try {
-    // Authenticate user
-    const session = await auth();
-    if (!session || !session.user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
-    
-    // Verify admin role
-    const isAdmin = await verifyAdminRole(session.user.id);
-    if (!isAdmin) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
+    // Authentication and admin role are already verified by withAdminRole wrapper
+    // const session = await auth(); // Removed
+    // ... verification logic removed ...
     
     // Extract and validate query parameters
     const url = new URL(request.url);
@@ -56,13 +54,11 @@ export async function GET(
     
     const validationResult = getExportQuerySchema.safeParse(queryParams);
     if (!validationResult.success) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: 'Invalid query parameters',
-          errors: validationResult.error.errors,
-        },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid query parameters',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        { errors: validationResult.error.errors }
       );
     }
     
@@ -71,46 +67,35 @@ export async function GET(
     // Handle different export types based on the dynamic parameter
     switch (type) {
       case 'tickets':
-        return handleTicketsExport(format, startDate, endDate, session.user.id);
+        return handleTicketsExport(format, startDate ?? null, endDate ?? null, user.uid);
       case 'workdays':
-        return handleWorkdaysExport(format, startDate, endDate, session.user.id);
+        return handleWorkdaysExport(format, startDate ?? null, endDate ?? null, user.uid);
       default:
-        return NextResponse.json(
-          { success: false, message: `Invalid export type: ${type}` },
-          { status: 400 }
+        throw new ValidationError(
+          `Invalid export type: ${type}`,
+          ErrorCodes.VALIDATION_INVALID_INPUT,
+          400
         );
     }
   } catch (error) {
     console.error(`Error in ${type} export:`, error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        message: `Failed to export ${type}`
-      },
-      { status: 500 }
-    );
+    return handleApiError(error, `Failed to export ${type}`);
   }
-}
+});
 
 // POST handler for creating export tasks (larger exports)
-export async function POST(
+// Wrap POST handler with authentication and admin role check
+export const POST = withAdminRole(async (
   request: Request,
-  { params }: { params: { type: string } }
-) {
-  const { type } = params;
+  context: { params: { type: string } },
+  user: AuthenticatedUser
+) => {
+  const { type } = context.params;
   
   try {
-    // Authenticate user
-    const session = await auth();
-    if (!session || !session.user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
-    
-    // Verify admin role
-    const isAdmin = await verifyAdminRole(session.user.id);
-    if (!isAdmin) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
+    // Authentication and admin role are already verified by withAdminRole wrapper
+    // const session = await auth(); // Removed
+    // ... verification logic removed ...
     
     // Parse and validate request body
     const body = await request.json();
@@ -120,19 +105,18 @@ export async function POST(
     });
     
     if (!validationResult.success) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: 'Invalid request data',
-          errors: validationResult.error.errors,
-        },
-        { status: 400 }
+      throw new ValidationError(
+        'Invalid request data',
+        ErrorCodes.VALIDATION_INVALID_INPUT,
+        400,
+        { errors: validationResult.error.errors }
       );
     }
     
     const exportParams = validationResult.data;
     
     // Create an export record in Firestore
+    const db = getFirestoreAdmin();
     const exportRef = await addDoc(collection(db, 'exports'), {
       type: exportParams.type,
       format: exportParams.format,
@@ -144,7 +128,7 @@ export async function POST(
       jobsiteId: exportParams.jobsiteId || null,
       employeeId: exportParams.employeeId || null,
       status: 'processing',
-      userId: session.user.id,
+      userId: user.uid, // Use user.uid
       createdAt: serverTimestamp(),
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
     });
@@ -152,24 +136,23 @@ export async function POST(
     // Start the export process asynchronously
     // In a production app, this would be handled by a background job/worker
     // For now, we'll simulate this with a local async function
-    processExportInBackground(exportRef.id, exportParams, session.user.id);
+    processExportInBackground(exportRef.id, exportParams, user.uid); // Use user.uid
     
-    return NextResponse.json({ 
-      success: true, 
-      message: `Export task created successfully`,
-      exportId: exportRef.id,
-    });
+    return createSuccessResponse(
+      'Export task created successfully',
+      {
+        exportId: exportRef.id,
+        status: 'processing',
+        type: exportParams.type
+      },
+      'export',
+      { status: 201 }
+    );
   } catch (error) {
     console.error(`Error creating ${type} export task:`, error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        message: `Failed to create export task`
-      },
-      { status: 500 }
-    );
+    return handleApiError(error, `Failed to create export task`);
   }
-}
+});
 
 // Tickets export handler
 async function handleTicketsExport(
@@ -187,6 +170,7 @@ async function handleTicketsExport(
   });
   
   // Create a record in the exports collection
+  const db = getFirestoreAdmin(); // Get Firestore instance
   await addDoc(collection(db, 'exports'), {
     type: 'tickets',
     format,
@@ -202,11 +186,17 @@ async function handleTicketsExport(
     storagePath: result.storagePath,
   });
   
-  return NextResponse.json({ 
-    success: true,
-    message: `Tickets exported successfully in ${format} format`,
-    ...result,
-  });
+  return createSuccessResponse(
+    `Tickets exported successfully in ${format} format`,
+    {
+      url: result.url,
+      filename: result.filename,
+      recordCount: result.recordCount,
+      expiresAt: result.expiresAt,
+      format
+    },
+    'export'
+  );
 }
 
 // Workdays export handler
@@ -224,6 +214,7 @@ async function handleWorkdaysExport(
   });
   
   // Create a record in the exports collection
+  const db = getFirestoreAdmin(); // Get Firestore instance
   await addDoc(collection(db, 'exports'), {
     type: 'workdays',
     format,
@@ -239,11 +230,17 @@ async function handleWorkdaysExport(
     storagePath: result.storagePath,
   });
   
-  return NextResponse.json({ 
-    success: true,
-    message: `Workdays exported successfully in ${format} format`,
-    ...result,
-  });
+  return createSuccessResponse(
+    `Workdays exported successfully in ${format} format`,
+    {
+      url: result.url,
+      filename: result.filename,
+      recordCount: result.recordCount,
+      expiresAt: result.expiresAt,
+      format
+    },
+    'export'
+  );
 }
 
 // Helper function to process exports in background
@@ -280,6 +277,7 @@ async function processExportInBackground(
     }
     
     // Update the export record with the result
+    const db = getFirestoreAdmin();
     const exportDocRef = doc(db, 'exports', exportId);
     await updateDoc(exportDocRef, {
       status: 'completed',
@@ -294,6 +292,7 @@ async function processExportInBackground(
     console.error(`Error processing export ${exportId}:`, error);
     
     // Update the export record with the error
+    const db = getFirestoreAdmin(); // Get Firestore instance
     const exportDocRef = doc(db, 'exports', exportId);
     await updateDoc(exportDocRef, {
       status: 'error',

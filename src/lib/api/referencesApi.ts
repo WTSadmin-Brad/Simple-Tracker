@@ -1,167 +1,88 @@
 /**
  * Reference data API client functions
- * 
- * @source directory-structure.md - "API client functions" section
- * @source Employee_Flows.md - "Reference Data" section
  */
 
-import { ApiResponse } from '../../types/api';
-import { Jobsite } from '../../types/firebase';
-import { Truck } from '../../types/firebase';
+import { apiRequest, StandardResponse } from './apiClient';
+import { JobsitesResponse, TrucksResponse } from '@/types/api';
+import { Jobsite, Truck } from '@/types/firebase';
 
 /**
- * Base URL for reference data API endpoints
+ * API endpoints for reference data operations
  */
-const REFERENCES_API_BASE = '/api/references';
+const ENDPOINTS = {
+  JOBSITES: '/api/references/jobsites',
+  JOBSITES_SEARCH: (query: string) => `/api/references/jobsites/search?q=${encodeURIComponent(query)}`,
+  TRUCKS: '/api/references/trucks',
+  TRUCKS_SEARCH: (query: string) => `/api/references/trucks/search?q=${encodeURIComponent(query)}`,
+  CATEGORIES: '/api/references/categories',
+  USER_PREFERENCES: '/api/references/user-preferences',
+};
 
 /**
  * Get all jobsites
  * 
- * @returns Promise with jobsite data
+ * @returns Promise with standardized response containing jobsite data
  */
-export async function getJobsites(): Promise<ApiResponse<Jobsite[]>> {
-  try {
-    const response = await fetch(
-      `${REFERENCES_API_BASE}/jobsites`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch jobsites');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch jobsites'
-    };
-  }
+export async function getJobsites(): Promise<StandardResponse<JobsitesResponse>> {
+  return apiRequest<JobsitesResponse>(ENDPOINTS.JOBSITES);
 }
 
 /**
  * Search jobsites by name
  * 
  * @param query - Search query string
- * @returns Promise with matching jobsite data
+ * @returns Promise with standardized response containing matching jobsite data
  */
-export async function searchJobsites(query: string): Promise<ApiResponse<Jobsite[]>> {
-  try {
-    const response = await fetch(
-      `${REFERENCES_API_BASE}/jobsites/search?q=${encodeURIComponent(query)}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to search jobsites');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to search jobsites'
-    };
-  }
+export async function searchJobsites(query: string): Promise<StandardResponse<JobsitesResponse>> {
+  return apiRequest<JobsitesResponse>(ENDPOINTS.JOBSITES_SEARCH(query));
 }
 
 /**
  * Get all trucks
  * 
- * @returns Promise with truck data
+ * @returns Promise with standardized response containing truck data
  */
-export async function getTrucks(): Promise<ApiResponse<Truck[]>> {
-  try {
-    const response = await fetch(
-      `${REFERENCES_API_BASE}/trucks`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch trucks');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch trucks'
-    };
-  }
+export async function getTrucks(): Promise<StandardResponse<TrucksResponse>> {
+  return apiRequest<TrucksResponse>(ENDPOINTS.TRUCKS);
 }
 
 /**
  * Search trucks by number
  * 
  * @param query - Search query string
- * @returns Promise with matching truck data
+ * @returns Promise with standardized response containing matching truck data
  */
-export async function searchTrucks(query: string): Promise<ApiResponse<Truck[]>> {
-  try {
-    const response = await fetch(
-      `${REFERENCES_API_BASE}/trucks/search?q=${encodeURIComponent(query)}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to search trucks');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to search trucks'
-    };
-  }
+export async function searchTrucks(query: string): Promise<StandardResponse<TrucksResponse>> {
+  return apiRequest<TrucksResponse>(ENDPOINTS.TRUCKS_SEARCH(query));
 }
 
 /**
  * Get ticket categories
  * 
- * @returns Promise with category data
+ * @returns Promise with standardized response containing category data
  */
-export async function getTicketCategories(): Promise<ApiResponse<string[]>> {
-  try {
-    const response = await fetch(
-      `${REFERENCES_API_BASE}/categories`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch categories');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch categories'
-    };
-  }
+export async function getTicketCategories(): Promise<StandardResponse<{ categories: string[] }>> {
+  return apiRequest<{ categories: string[] }>(ENDPOINTS.CATEGORIES);
+}
+
+/**
+ * Get user preferences
+ * 
+ * @returns Promise with standardized response containing user preferences
+ */
+export async function getUserPreferences(): Promise<StandardResponse<{ preferences: any }>> {
+  return apiRequest<{ preferences: any }>(ENDPOINTS.USER_PREFERENCES);
+}
+
+/**
+ * Update user preferences
+ * 
+ * @param preferences - Updated user preferences
+ * @returns Promise with standardized response containing updated preferences
+ */
+export async function updateUserPreferences(preferences: any): Promise<StandardResponse<{ preferences: any }>> {
+  return apiRequest<{ preferences: any }>(ENDPOINTS.USER_PREFERENCES, {
+    method: 'PUT',
+    body: preferences
+  });
 }

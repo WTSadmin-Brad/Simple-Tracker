@@ -30,44 +30,32 @@ export default function AuthGuard({
   const { 
     user, 
     isAuthenticated, 
-    isLoading, 
-    checkAuthStatus 
+    isLoading
+    // Removed checkAuthStatus as direct store check might be less reliable than hook's state
   } = useAuthStore();
   
   useEffect(() => {
-    const verifyAuth = async () => {
-      try {
-        // Check if the user is authenticated
-        const isAuth = checkAuthStatus();
-        
-        if (!isAuth) {
-          // Redirect to login page if not authenticated
-          router.push(`/auth/login?returnUrl=${encodeURIComponent(pathname)}`);
-          return;
-        }
-        
-        // Check if the user has the required role
-        if (requiredRole && user?.role !== requiredRole) {
-          // Redirect to appropriate dashboard if user doesn't have required role
-          const redirectPath = user?.role === 'admin' ? '/admin/dashboard' : '/employee/calendar';
-          router.push(redirectPath);
-          return;
-        }
-        
-        // User is authenticated and has the required role
+    // Simplified effect: rely on isLoading and isAuthenticated from the store
+    // which are managed by the useAuth hook and onAuthStateChanged listener.
+    if (!isLoading) { // Only check when initial loading is done
+      if (!isAuthenticated) {
+        // Redirect to login page if not authenticated
+        console.log('AuthGuard: User not authenticated, redirecting to login.');
+        router.push(`/auth/login?returnUrl=${encodeURIComponent(pathname)}`);
+      } else if (requiredRole && user?.role !== requiredRole) {
+        // Redirect if authenticated but role doesn't match
+        console.log(`AuthGuard: User role (${user?.role}) does not match required role (${requiredRole}), redirecting.`);
+        const redirectPath = user?.role === 'admin' ? '/admin/dashboard' : '/employee/calendar';
+        router.push(redirectPath);
+      } else {
+        // User is authenticated and has the required role (or no role required)
         setIsChecking(false);
-      } catch (error) {
-        console.error('Auth verification error:', error);
-        // Redirect to login page on error
-        router.push('/auth/login');
       }
-    };
-    
-    // Only verify if not currently loading
-    if (!isLoading) {
-      verifyAuth();
     }
-  }, [pathname, router, requiredRole, user, isAuthenticated, isLoading, checkAuthStatus]);
+    
+    // Removed verifyAuth call
+  // Dependencies: Check auth state whenever loading, auth status, user, or path changes
+  }, [isLoading, isAuthenticated, user, requiredRole, pathname, router]);
   
   // Show loading state while checking authentication
   if (isLoading || isChecking) {

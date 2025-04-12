@@ -104,7 +104,12 @@ export function useJobsites() {
         retryDelay: 1000,
       });
       
-      return response.jobsites as Jobsite[];
+      // Use the jobsites property instead of data property
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to fetch jobsites');
+      }
+      
+      return response.jobsites || [];
     } catch (err) {
       // Log the error
       errorHandler.logError(err, { 
@@ -144,7 +149,7 @@ export function useJobsites() {
         
         if (!result.ok) {
           if (result.status === 404) {
-            return { jobsite: null };
+            return { success: false, message: 'Jobsite not found', status: 404 };
           }
           
           const errorData = await result.json();
@@ -161,7 +166,16 @@ export function useJobsites() {
         retryDelay: 1000,
       });
       
-      return response.jobsite as Jobsite | null;
+      // Check for success and use jobsite property
+      if (!response.success) {
+        // If 404, just return null
+        if (response.status === 404) {
+          return null;
+        }
+        throw new Error(response.message || `Failed to fetch jobsite with ID ${id}`);
+      }
+      
+      return response.jobsite || null;
     } catch (err) {
       // Log the error
       errorHandler.logError(err, { 

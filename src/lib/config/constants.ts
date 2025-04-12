@@ -13,7 +13,7 @@ export const API_BASE_URL = '/api';
  * Authentication constants
  */
 export const AUTH = {
-  TOKEN_KEY: 'auth-token',
+  // TOKEN_KEY: 'auth-token', // Removed unused cookie key
   REFRESH_INTERVAL: 1000 * 60 * 30, // 30 minutes
   SESSION_EXPIRY: 1000 * 60 * 60 * 24, // 24 hours
 };

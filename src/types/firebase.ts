@@ -56,6 +56,7 @@ export interface FirestoreUser extends FirestoreDocument {
   username: string;
   displayName: string;
   role: 'employee' | 'admin';
+  passwordHash: string;
   lastLogin: FirestoreTimestamp;
   isActive: boolean;
 }

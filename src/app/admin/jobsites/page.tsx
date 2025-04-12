@@ -21,7 +21,7 @@ import JobsitesDataGrid from './_components/jobsites-data-grid.client';
 
 export const metadata: Metadata = {
   title: 'Jobsite Management | Admin | Simple Tracker',
-  description: 'Manage and review all jobsites',
+  description: 'Manage and review all jobsites'
 };
 
 export default async function AdminJobsitesPage({

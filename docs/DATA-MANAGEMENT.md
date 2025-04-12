@@ -129,7 +129,13 @@ export function useTicketQueries(): UseTicketQueriesReturn {
   const useTickets = (filters: TicketFilterParams = {}) => {
     return useQuery({
       queryKey: queryKeys.tickets.list(filters),
-      queryFn: () => getTickets(filters),
+      queryFn: async () => {
+        const response = await getTickets(filters);
+        if (!response.success) {
+          throw new Error(response.message);
+        }
+        return response.tickets;
+      },
       staleTime: TICKET_LIST_STALE_TIME,
       ...createRetryConfig(2),
     });
@@ -144,17 +150,24 @@ export function useTicketQueries(): UseTicketQueriesReturn {
 }
 ```
 
+> **Authentication Note:** The underlying API call functions (e.g., `getTickets`, `getTicketById`) are responsible for automatically including the necessary `Authorization: Bearer <ID_token>` header based on the current user's session. The query hooks themselves do not need to manage authentication tokens directly. Server-side API routes handle token verification and authorization based on verified claims.
+
 ### Error Handling in Queries
 
 The standardized pattern for error handling in queries is to throw errors from query functions:
 
 ```tsx
 // The standard pattern in src/lib/query/queryUtils.ts
-export function handleApiErrors<T>(response: ApiResponse<T>): T {
+export function handleApiErrors<T>(response: StandardResponse<T>): T {
   if (!response.success) {
-    throw new Error(response.error || 'Unknown error occurred');
+    throw new Error(response.message || 'Unknown error occurred');
   }
-  return response.data;
+  
+  // Extract the resource-specific property from the response
+  // This usually matches the name of the resource (tickets, ticket, etc.)
+  // Since we can't know the exact property name at this level, we need to
+  // handle this in the actual query function
+  return response as any; // The caller will extract the specific property
 }
 
 // Example usage in a query function
@@ -163,7 +176,10 @@ const useTicket = (id: string) => {
     queryKey: queryKeys.tickets.detail(id),
     queryFn: async () => {
       const response = await getTicketById(id);
-      return handleApiErrors(response);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.ticket; // Access resource-specific property directly
     },
     ...createRetryConfig(2),
   });
@@ -183,7 +199,7 @@ Mutation hooks follow a similar pattern to query hooks but are focused on modify
  * Return type for ticket mutations
  */
 interface UseTicketMutationsReturn {
-  useSubmitTicket: () => UseMutationResult<ApiResponse<Ticket>, Error, WizardData, unknown>;
+  useSubmitTicket: () => UseMutationResult<StandardResponse<Ticket>, Error, WizardData, unknown>;
   // Other mutations...
 }
 
@@ -216,6 +232,8 @@ export function useTicketMutations(): UseTicketMutationsReturn {
   };
 }
 ```
+
+> **Authentication Note:** Similar to queries, the underlying API call functions (e.g., `submitTicket`) handle the inclusion of the `Authorization: Bearer <ID_token>` header. Mutation hooks focus on the data payload and handling the mutation lifecycle (loading, success, error, invalidation).
 
 ### Optimistic Updates
 
@@ -317,6 +335,8 @@ export function createRetryConfig(maxRetries = 3, baseDelay = 1000) {
 }
 ```
 
+
+> **Authentication Errors:** Authentication or authorization failures (typically resulting in 401 Unauthorized or 403 Forbidden HTTP status codes) are handled by the standard error mechanisms. The `createRetryConfig` function (lines 315-318) correctly prevents retries for these 4xx errors. Such errors will propagate to the hook's `error` state and trigger the `onError` callbacks in mutations (e.g., displaying a toast notification).
 ## Error Handling
 
 Error handling in data operations follows a consistent pattern across the application.
@@ -326,11 +346,27 @@ Error handling in data operations follows a consistent pattern across the applic
 All API responses follow a standard structure:
 
 ```tsx
-interface ApiResponse<T> {
+/**
+ * Standardized API response
+ */
+interface StandardResponse<T = any> {
   success: boolean;
-  data?: T;
-  error?: string;
-  status?: number;
+  message: string;
+  [resourceName: string]: any; // Resource-specific property (e.g., "tickets", "ticket")
+  timestamp: string;
+}
+
+/**
+ * Error response structure
+ */
+interface ErrorResponse {
+  success: false;
+  message: string;
+  error: {
+    code: string;
+    status: number;
+    details?: any;
+  };
   timestamp: string;
 }
 ```
@@ -340,13 +376,14 @@ interface ApiResponse<T> {
 The standard error handling pattern is to throw errors in query functions and let TanStack Query handle them:
 
 ```tsx
-// src/lib/query/queryUtils.ts
-export function handleApiErrors<T>(response: ApiResponse<T>): T {
+// In a query function
+const queryFn = async () => {
+  const response = await getTickets(filters);
   if (!response.success) {
-    throw new Error(response.error || 'Unknown error occurred');
+    throw new Error(response.message);
   }
-  return response.data;
-}
+  return response.tickets; // Use resource-specific property
+};
 ```
 
 This is the recommended approach rather than using conditional checks with `select`, as it provides better error handling and integration with TanStack Query's retry system.
@@ -367,13 +404,23 @@ export function createMutationOptions(toast, options) {
       });
     },
     onSuccess: (data) => {
-      toast({
-        title: success,
-        variant: 'success',
-      });
-      
-      if (onSuccessCallback) {
-        onSuccessCallback(data);
+      // Only show success toast if the operation succeeded
+      if (data.success) {
+        toast({
+          title: success,
+          variant: 'success',
+        });
+        
+        if (onSuccessCallback) {
+          onSuccessCallback(data);
+        }
+      } else {
+        // Handle API errors that don't throw exceptions
+        toast({
+          title: error,
+          description: data.message,
+          variant: 'destructive',
+        });
       }
     },
     onError: (err) => {
@@ -431,10 +478,12 @@ jest.mock('@/lib/api/ticketApi');
 
 describe('useTicketQueries', () => {
   it('should fetch tickets successfully', async () => {
-    // Mock API response
+    // Mock API response with resource-specific property
     (getTickets as jest.Mock).mockResolvedValue({
       success: true,
-      data: [{ id: '1', title: 'Test Ticket' }],
+      tickets: [{ id: '1', title: 'Test Ticket' }],
+      message: 'Tickets retrieved successfully',
+      timestamp: new Date().toISOString()
     });
     
     // Render the hook with query client wrapper
@@ -520,16 +569,13 @@ Follow the standard error handling pattern:
 
 ```tsx
 // In query function
-const data = await api.getData();
-return handleApiErrors(data);
-
-// handleApiErrors implementation
-function handleApiErrors(response) {
+const queryFn = async () => {
+  const response = await getResource();
   if (!response.success) {
-    throw new Error(response.error);
+    throw new Error(response.message);
   }
-  return response.data;
-}
+  return response.resourceName; // Use resource-specific property
+};
 ```
 
 ### 4. Define Explicit TypeScript Interfaces
@@ -568,15 +614,16 @@ staleTime: 2 * 60 * 1000, // 2 minutes
 staleTime: 0,
 ```
 
-### 6. Follow Domain-Specific Response Properties
+### 6. Follow Resource-Specific Response Properties
 
-API responses should use domain-specific properties instead of generic `data`:
+API responses should use resource-specific properties instead of generic `data`:
 
 ```tsx
 // Good
 {
   success: true,
-  tickets: [...], // Domain-specific property
+  tickets: [...], // Resource-specific property
+  message: "Tickets retrieved successfully",
   timestamp: '2025-03-26T12:34:56Z'
 }
 
@@ -584,6 +631,7 @@ API responses should use domain-specific properties instead of generic `data`:
 {
   success: true,
   data: [...], // Generic property
+  message: "Success",
   timestamp: '2025-03-26T12:34:56Z'
 }
 ```

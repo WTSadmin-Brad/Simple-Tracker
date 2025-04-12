@@ -8,7 +8,8 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth, UserRecord } from 'firebase-admin/auth';
+import bcrypt from 'bcrypt';
 
 // Initialize Firebase Admin only once
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
@@ -26,33 +27,23 @@ export function initializeFirebaseAdmin() {
 
   if (!getApps().length) {
     try {
-      // Check if we have environment variables for service account
-      if (process.env.FIREBASE_PRIVATE_KEY) {
-        if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL) {
-          throw new Error('Missing required Firebase Admin environment variables. Check your .env.local file.');
-        }
-        
-        initializeApp({
-          credential: cert({
-            projectId: FIREBASE_PROJECT_ID,
-            clientEmail: FIREBASE_CLIENT_EMAIL,
-            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-          }),
-          storageBucket: FIREBASE_STORAGE_BUCKET
-        });
-      } else {
-        // Fallback initialization for development
-        console.warn('Firebase Admin SDK initialized without service account. Some features may not work correctly.');
-        
-        if (!FIREBASE_PROJECT_ID) {
-          throw new Error('Missing FIREBASE_PROJECT_ID environment variable.');
-        }
-        
-        initializeApp({
-          projectId: FIREBASE_PROJECT_ID,
-          storageBucket: FIREBASE_STORAGE_BUCKET
-        });
+      // Ensure all required environment variables for service account are present
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+      if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !privateKey) {
+        console.error('Missing required Firebase Admin environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY). Check your environment configuration.');
+        throw new Error('Missing required Firebase Admin environment variables.');
       }
+
+      // Initialize with service account credentials
+      initializeApp({
+        credential: cert({
+          projectId: FIREBASE_PROJECT_ID,
+          clientEmail: FIREBASE_CLIENT_EMAIL,
+          // Replace escaped newlines in private key
+          privateKey: privateKey.replace(/\\n/g, '\n'),
+        }),
+        storageBucket: FIREBASE_STORAGE_BUCKET,
+      });
       
       console.log('Firebase Admin SDK initialized successfully');
     } catch (error) {
@@ -124,20 +115,33 @@ export async function verifyIdToken(token: string) {
     throw new Error('verifyIdToken should only be used on the server side');
   }
 
+  const auth = getAuthAdmin(); // Use getAuthAdmin to ensure initialization
   try {
-    const auth = getAuth();
-    const decodedToken = await auth.verifyIdToken(token);
+    // Verify the ID token while checking if the token is revoked.
+    const checkRevoked = true;
+    const decodedToken = await auth.verifyIdToken(token, checkRevoked);
     return decodedToken;
-  } catch (error) {
-    console.error('Error verifying ID token:', error);
-    throw error;
+  } catch (error: any) {
+    let errorMessage = 'Error verifying ID token.';
+    if (error.code === 'auth/id-token-revoked') {
+      errorMessage = 'ID token has been revoked. Please re-authenticate.';
+      console.warn(errorMessage, { uid: error.uid }); // Log revoked token UID if available
+    } else if (error.code === 'auth/id-token-expired') {
+      errorMessage = 'ID token has expired. Please re-authenticate.';
+      console.warn(errorMessage);
+    } else {
+      // Log other verification errors
+      console.error('Error verifying ID token:', error.code, error.message);
+    }
+    // Re-throw a generic error or a more specific one if needed downstream
+    throw new Error(errorMessage);
   }
 }
 
 /**
  * Create a new user with specified role
  * 
- * @param email - User email
+ * @param username - User's chosen username (for login)
  * @param password - Initial password
  * @param displayName - User display name
  * @param role - User role ('admin' or 'employee')
@@ -145,45 +149,66 @@ export async function verifyIdToken(token: string) {
  * @returns Created user record
  */
 export async function createUserWithRole(
-  email: string,
+  username: string, // Changed from email
   password: string,
   displayName: string,
   role: 'admin' | 'employee' = 'employee',
   createdBy: string = 'system'
-) {
+): Promise<UserRecord> { // Added return type hint
   if (typeof window !== 'undefined') {
     throw new Error('createUserWithRole should only be used on the server side');
   }
 
   const auth = getAuthAdmin();
+  const db = getFirestoreAdmin();
   
   try {
-    // Create the user
+    // 1. Hash the password
+    const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // 2. Create the Firebase Auth user (using a placeholder email)
+    // Firebase Auth might still require an email, but we use username for login.
+    // Password is required here for creation, but login uses the hash in Firestore.
+    const placeholderEmail = `${username}@placeholder.app`;
     const userRecord = await auth.createUser({
-      email,
-      password,
-      displayName
+      email: placeholderEmail,
+      emailVerified: false, // Mark placeholder email as not verified
+      password: password, // Required by Firebase Auth for creation
+      displayName: displayName,
+      disabled: false,
     });
     
-    // Set custom claims with role
+    // 3. Set custom claims with role immediately
     await auth.setCustomUserClaims(userRecord.uid, { role });
     
-    // Store user in Firestore
-    const db = getFirestoreAdmin();
+    // 4. Store user details (including username and hashed password) in Firestore
     await db.collection('users').doc(userRecord.uid).set({
       uid: userRecord.uid,
-      email,
-      displayName,
-      role,
+      username: username, // Store the actual username
+      passwordHash: passwordHash, // Store the hashed password
+      displayName: displayName,
+      role: role,
       createdAt: new Date(),
-      createdBy,
-      isActive: true
+      createdBy: createdBy,
+      isActive: true,
+      // email: placeholderEmail, // Optionally store placeholder email if needed for reference
     });
     
+    console.log(`User created successfully: ${username} (UID: ${userRecord.uid})`);
     return userRecord;
-  } catch (error) {
-    console.error('Error creating user with role:', error);
-    throw error;
+
+  } catch (error: any) {
+    // Log specific Firebase errors if possible
+    if (error.code === 'auth/email-already-exists') {
+       console.error(`Error creating user: Placeholder email ${username}@placeholder.app likely conflicts. This might indicate the username is effectively taken or a collision occurred.`, error);
+       // Consider deleting the partially created Auth user if necessary
+       // await auth.deleteUser(partiallyCreatedUid).catch(delErr => console.error('Failed to clean up partially created user', delErr));
+       throw new Error(`Username or placeholder email conflict for ${username}.`);
+    } else {
+      console.error(`Error creating user ${username} with role ${role}:`, error);
+    }
+    throw error; // Re-throw the original error
   }
 }
 

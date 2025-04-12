@@ -92,10 +92,14 @@ The application uses these environment variables:
 - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`: Firebase storage bucket
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`: Firebase messaging sender ID
 - `NEXT_PUBLIC_FIREBASE_APP_ID`: Firebase app ID
+- `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`: Firebase measurement ID (Optional)
+
+**Admin SDK (Server-Side):** These should be handled securely (e.g., via environment variables in your hosting environment, not committed to `.env.local`):
+- `FIREBASE_PROJECT_ID`: Firebase project ID (for admin SDK)
 - `FIREBASE_CLIENT_EMAIL`: Service account email (for admin SDK)
 - `FIREBASE_PRIVATE_KEY`: Service account private key (for admin SDK)
-- `FIREBASE_PROJECT_ID`: Firebase project ID (for admin SDK)
-- `FIREBASE_STORAGE_BUCKET`: Firebase storage bucket (for admin SDK)
+- `FIREBASE_STORAGE_BUCKET`: Firebase storage bucket (for admin SDK, often same as public)
+- `BCRYPT_SALT_ROUNDS`: Number of salt rounds for bcrypt password hashing (server-side)
 
 ### Firebase Emulators
 
@@ -108,7 +112,7 @@ For local development without affecting production data:
    firebase init emulators
    ```
 
-2. Configure emulators for Firestore and Authentication
+2. Configure emulators (`firebase.json`) for Firestore and Authentication. This is crucial for testing the custom username/password login flow (`/api/auth/login`), user creation, and token verification locally without impacting live data.
 
 3. Start emulators:
    ```
@@ -183,7 +187,7 @@ All code changes require review:
 2. Perform final testing
 3. Bump version numbers
 4. Create release notes
-5. Deploy to production
+5. Deploy application code and Firebase configuration (rules, indexes, storage) via CI/CD pipeline or Firebase CLI (`firebase deploy --only ...`). See `Firebase_Codebase_Deployment.md`.
 6. Tag the release
 7. Merge back to `main`
 
@@ -234,6 +238,7 @@ For testing React components:
 - Test from a user perspective
 - Focus on accessibility and user interactions
 - Avoid testing implementation details
+- Mock authentication state based on verified claims obtained via Firebase Client SDK (`getIdTokenResult`), reflecting the new auth flow.
 
 ### Integration Testing
 
@@ -242,7 +247,8 @@ For testing component interactions and data flow:
 - Test components with their dependencies
 - Use mock server responses for API calls
 - Verify that components work together correctly
-- Test common user flows
+- Test common user flows, including those involving the new username/password login API.
+- Mock authentication state based on verified claims for components requiring specific roles or user IDs.
 
 ### End-to-End Testing
 
@@ -251,7 +257,8 @@ For testing complete user flows:
 - Use Cypress for browser-based testing
 - Test critical user journeys
 - Verify application behavior in a realistic environment
-- Use real backends when possible, mocks when necessary
+- Use real backends when possible (e.g., Firebase emulators), mocks when necessary.
+- Specifically test the full username/password login flow and subsequent actions requiring authenticated state or specific roles.
 
 ### Testing Hooks
 
@@ -283,6 +290,8 @@ describe('useExample', () => {
 });
 ```
 
+*Note:* When testing hooks like `useAuth`, ensure mocks reflect interactions with the new `/api/auth/login` endpoint and the `signInWithCustomToken` client-side flow.
+
 ### Testing Query Hooks
 
 For testing TanStack Query hooks:
@@ -308,10 +317,12 @@ export function createWrapper() {
 // Test with the wrapper
 describe('useTicketQueries', () => {
   it('should fetch tickets successfully', async () => {
-    // Mock API response
+    // Mock API response using standardized format with resource-specific property
     (getTickets as jest.Mock).mockResolvedValue({
       success: true,
-      data: [{ id: '1', title: 'Test Ticket' }],
+      message: 'Tickets retrieved successfully',
+      tickets: [{ id: '1', date: new Date(), truckNumber: 'T-01', categories: { test: 1 } }], // Example ticket data
+      timestamp: new Date().toISOString(),
     });
     
     // Render the hook with query client wrapper
@@ -327,47 +338,109 @@ describe('useTicketQueries', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     
     // Check data
-    expect(result.current.data).toEqual([{ id: '1', title: 'Test Ticket' }]);
+    expect(result.current.data).toEqual([{ id: '1', date: expect.any(Date), truckNumber: 'T-01', categories: { test: 1 } }]);
   });
 });
 ```
 
-### Testing API Routes
+### Testing API Routes (Updated for New Auth)
 
 For testing Next.js API routes:
 
-```
-// Example API route test
-import { POST } from './route';
-import { createTicket } from './helpers';
+```typescript
+// Example API route test (using Jest and mocking the new auth wrappers)
+import { POST } from '@/app/api/tickets/route'; // Adjust path as needed
+import { createTicketHelper } from '@/app/api/tickets/helpers'; // Adjust path/name as needed
+import * as apiMiddleware from '@/lib/api/middleware'; // Import the middleware module
 import { NextRequest } from 'next/server';
+import { Ticket } from '@/types/tickets'; // Import Ticket type
+import { DecodedIdToken } from 'firebase-admin/auth'; // Type for mocked token
 
-// Mock dependencies
-jest.mock('@/lib/firebase/admin');
-jest.mock('./helpers');
+// Mock the specific middleware wrappers (withAuthentication, withAdminRole, etc.)
+// This example mocks withAuthentication
+jest.mock('@/lib/api/middleware', () => {
+  const originalModule = jest.requireActual('@/lib/api/middleware');
+  return {
+    ...originalModule, // Keep other exports if needed
+    withAuthentication: jest.fn((handler) => {
+      // This mock simulates the wrapper successfully verifying a token
+      // and passing the decoded token (or just userId) to the handler.
+      return async (request: NextRequest, params: any) => {
+        // Simulate successful authentication - provide mock user data
+        const mockUser: Partial<DecodedIdToken> = { uid: 'test-user-id', role: 'employee' }; // Add claims as needed
+        // Pass the mock user context (adjust based on what your handler expects)
+        return handler(mockUser as DecodedIdToken, request, params);
+      };
+    }),
+    // Mock withAdminRole similarly if testing admin routes
+    // withAdminRole: jest.fn((handler) => ... ),
+  };
+});
+
+// Mock the business logic helper
+jest.mock('@/app/api/tickets/helpers', () => ({
+  createTicketHelper: jest.fn(),
+}));
 
 describe('POST /api/tickets', () => {
-  it('should create a ticket successfully', async () => {
-    // Create mock request
+  it('should create a ticket successfully when authenticated and return standardized response', async () => {
+      // Mock the result from the business logic helper
+      const mockCreatedTicketData: Partial<Ticket> = {
+        id: 'new-ticket-123',
+        date: new Date('2025-04-06'),
+        truckNumber: 'T-05',
+        jobsite: 'site-abc',
+        categories: { 'hangers': 50, 'leaners': 20 },
+        imageUrls: ['url1'],
+        userId: 'test-user-id', // Should match the mock user context
+        total: 70,
+        imageCount: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      // Mock the helper to return the expected data structure for the API response
+      (createTicketHelper as jest.Mock).mockResolvedValue(mockCreatedTicketData);
+
+    // Create mock request with valid data matching schema
+    const mockRequestBody = {
+      date: '2025-04-06',
+      truckId: 'T-05', // Assuming truckId is used in request
+      jobsiteId: 'site-abc', // Assuming jobsiteId is used in request
+      categories: { 'hangers': 50, 'leaners': 20 },
+      images: ['url1'], // Assuming image URLs/refs are passed
+    };
     const request = new NextRequest('http://localhost/api/tickets', {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer test-token',
+        'Authorization': 'Bearer test-token', // The token itself is less important now as the wrapper mock handles verification logic
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        // Test data
-      })
+      body: JSON.stringify(mockRequestBody)
     });
-    
-    // Call route handler
+
+    // Call the actual route handler (which is now wrapped by our mocked withAuthentication)
     const response = await POST(request);
     const body = await response.json();
-    
-    // Verify response
+
+    // Verify response status and standardized structure
     expect(response.status).toBe(201);
     expect(body.success).toBe(true);
+    expect(body.message).toBe('Ticket created successfully');
+    expect(body.ticket).toBeDefined();
+    expect(body.ticket.id).toBe('new-ticket-123');
+    expect(body.ticket.truckNumber).toBe('T-05');
+    expect(body.ticket.total).toBe(70);
+    expect(body.timestamp).toBeDefined();
+
+    // Verify the helper was called correctly with the user context from the mocked wrapper
+    expect(createTicketHelper).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'test-user-id', role: 'employee' }), // Verify user context passed by mock wrapper
+      expect.objectContaining(mockRequestBody)
+    );
   });
+
+  // Add tests for validation errors, permission errors (e.g., mocking withAdminRole and calling as non-admin), etc.
+  // Test cases where the auth wrapper mock simulates failure (e.g., no token, invalid token).
 });
 ```
 
@@ -375,38 +448,78 @@ describe('POST /api/tickets', () => {
 
 For development and testing with mock data:
 
-```
-// Mock API response generator
+```typescript
+// Mock API response generator reflecting standardized format
+// (Note: This is an example; actual implementation might vary)
+
+// Define the structure based on API.md
+interface MockSuccessResponse<T> {
+  success: true;
+  message: string;
+  [key: string]: any; // Holds the resource-specific data (e.g., tickets: T)
+  timestamp: string;
+}
+
+interface MockErrorResponse {
+  success: false;
+  message: string;
+  error: {
+    code: string;
+    status: number;
+    details?: any;
+  };
+  timestamp: string;
+}
+
+type MockApiResponse<T> = MockSuccessResponse<T> | MockErrorResponse;
+
 export function createMockApiResponse<T>(
+  resourceName: string, // e.g., 'tickets', 'ticket', 'workday'
   data: T,
   options?: {
     success?: boolean;
     message?: string;
-    status?: number;
+    status?: number; // HTTP status for error responses
+    errorCode?: string; // Error code for error responses
+    errorDetails?: any; // Details for error responses
     delay?: number;
   }
-): Promise<ApiResponse<T>> {
-  const response = {
-    success: options?.success ?? true,
-    message: options?.message ?? 'Operation completed successfully',
-    ...(options?.success === false
-      ? {
-          error: {
-            code: 'mock/error',
-            status: options?.status ?? 400,
-            details: null,
-          },
-        }
-      : data),
-    timestamp: new Date().toISOString(),
-  };
+): Promise<MockApiResponse<T>> {
+  const isSuccess = options?.success ?? true;
+  const timestamp = new Date().toISOString();
+
+  let response: MockApiResponse<T>;
+
+  if (isSuccess) {
+    response = {
+      success: true,
+      message: options?.message ?? 'Operation completed successfully',
+      [resourceName]: data, // Use the provided resource name as the key
+      timestamp: timestamp,
+    };
+  } else {
+    response = {
+      success: false,
+      message: options?.message ?? 'An error occurred',
+      error: {
+        code: options?.errorCode ?? 'mock/error',
+        status: options?.status ?? 400,
+        details: options?.errorDetails ?? null,
+      },
+      timestamp: timestamp,
+    };
+  }
 
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve(response);
-    }, options?.delay ?? 500);
+    }, options?.delay ?? 0); // Default delay 0 for tests
   });
 }
+
+// Example Usage:
+// const mockSuccessTickets = await createMockApiResponse('tickets', [{ id: '1' }], { success: true });
+// const mockError = await createMockApiResponse('ticket', null, { success: false, status: 404, message: 'Not Found' });
 ```
 
 ## Quality Assurance
@@ -465,7 +578,7 @@ The project uses these tools for code quality:
 
 ### Common Issues
 
-1. **Authentication Issues**: Firebase token expiration, missing permissions
+1. **Authentication Issues**: Problems with the custom username/password login API (`/api/auth/login`), bcrypt verification failures, Firebase Admin SDK credential issues, custom token creation/signing errors, ID token verification failures (middleware/API), incorrect or missing custom claims (`role`), Bearer token transport issues.
 2. **API Error Handling**: Inconsistent error formats, missing error handling
 3. **State Management**: Zustand store updates not reflecting in UI
 4. **Form Validation**: Zod schema errors, form submission issues
@@ -478,7 +591,7 @@ The project uses these tools for code quality:
 2. **Redux DevTools**: Inspect Zustand store (with middleware)
 3. **Network Tab**: Inspect API calls and responses
 4. **Console**: Use structured logging
-5. **Debugger**: Use browser debugger or IDE debugger
+5. **Debugger**: Use browser debugger or IDE debugger (including server-side debugging for API routes/middleware)
 
 ### Logging
 
@@ -488,6 +601,7 @@ The application uses a centralized logging system:
 2. **Production Logging**: Filtered logs in production
 3. **Error Logging**: Automatic error logging
 4. **Activity Logging**: User activity logging
+5. **Server-Side Auth Logs**: Check server logs (e.g., Vercel functions logs) for details from middleware token verification and custom login API execution (`/api/auth/login`).
 5. **Performance Logging**: Performance metric logging
 
 ### Error Tracking

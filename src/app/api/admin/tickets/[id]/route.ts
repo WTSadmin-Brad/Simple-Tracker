@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { authenticateRequest, handleApiError } from '@/lib/api/middleware';
+import { createSuccessResponse } from '@/lib/api/responseUtils';
 import { getAuthAdmin, getFirestoreAdmin } from '@/lib/firebase/admin';
 import { fetchTicketById, validateTicketUpdate, archiveTicket } from '../helpers';
 import { ForbiddenError, NotFoundError, ValidationError, ErrorCodes } from '@/lib/errors/error-types';
@@ -78,12 +79,12 @@ export const GET = authenticateRequest(async (
       );
     }
     
-    // 4. Return successful response
-    return NextResponse.json({
-      success: true,
-      message: 'Ticket retrieved successfully',
-      ticket
-    });
+    // 4. Return standardized response using utility function
+    return createSuccessResponse(
+      'Ticket retrieved successfully',
+      ticket,
+      'ticket'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to retrieve ticket details');
   }
@@ -161,14 +162,16 @@ export const PUT = authenticateRequest(async (
     // 6. Update the ticket
     await ticketRef.update(updateData);
     
-    // 7. Return successful response
-    return NextResponse.json({
-      success: true,
-      message: `Ticket ${id} updated successfully`,
-      id,
-      updatedAt: updateData.updatedAt,
-      changes: body
-    });
+    // 7. Return standardized response using utility function
+    return createSuccessResponse(
+      `Ticket ${id} updated successfully`,
+      {
+        id,
+        updatedAt: updateData.updatedAt,
+        changes: body
+      },
+      'ticket'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to update ticket');
   }
@@ -203,13 +206,15 @@ export const DELETE = authenticateRequest(async (
       );
     }
     
-    // 4. Return successful response
-    return NextResponse.json({
-      success: true,
-      message: `Ticket ${id} archived successfully`,
-      id,
-      archivedAt: result.archivedAt
-    });
+    // 4. Return standardized response using utility function
+    return createSuccessResponse(
+      `Ticket ${id} archived successfully`,
+      {
+        id,
+        archivedAt: result.archivedAt
+      },
+      'ticket'
+    );
   } catch (error) {
     return handleApiError(error, 'Failed to archive ticket');
   }

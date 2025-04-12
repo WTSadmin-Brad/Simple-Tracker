@@ -24,7 +24,13 @@ const WORKDAY_STATS_STALE_TIME = 10 * 60 * 1000; // 10 minutes
 export function useGetMonthWorkdays(year: number, month: number) {
   return useQuery({
     queryKey: queryKeys.workdays.calendar.month(year, month),
-    queryFn: () => workdayService.getMonthWorkdays(year, month),
+    queryFn: async () => {
+      const response = await workdayService.getMonthWorkdays(year, month);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.workdays; // Use specific 'workdays' property instead of generic 'data'
+    },
     staleTime: WORKDAY_CALENDAR_STALE_TIME,
     ...createRetryConfig(2),
   });
@@ -36,7 +42,13 @@ export function useGetMonthWorkdays(year: number, month: number) {
 export function useGetWorkdayById(id: string | null) {
   return useQuery({
     queryKey: queryKeys.workdays.detail(id || ''),
-    queryFn: () => workdayService.getWorkdayById(id || ''),
+    queryFn: async () => {
+      const response = await workdayService.getWorkdayById(id || '');
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.workday; // Use specific 'workday' property instead of generic 'data'
+    },
     enabled: !!id, // Only run the query if an ID is provided
     staleTime: WORKDAY_DETAIL_STALE_TIME,
     ...createRetryConfig(2),
@@ -49,7 +61,13 @@ export function useGetWorkdayById(id: string | null) {
 export function useGetWorkdayByDate(date: string | null) {
   return useQuery({
     queryKey: queryKeys.workdays.calendar.day(date || ''),
-    queryFn: () => workdayService.getWorkdayByDate(date || ''),
+    queryFn: async () => {
+      const response = await workdayService.getWorkdayByDate(date || '');
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.workday; // Use specific 'workday' property instead of generic 'data'
+    },
     enabled: !!date, // Only run the query if a date is provided
     staleTime: WORKDAY_DETAIL_STALE_TIME,
     ...createRetryConfig(2),
@@ -69,7 +87,11 @@ export function useCreateWorkday() {
       success: "Workday created successfully",
       error: "Failed to create workday",
       operationName: 'createWorkday',
-      onSuccessCallback: (newWorkday) => {
+      onSuccessCallback: (response) => {
+        if (!response.success) return;
+        
+        const newWorkday = response.workday; // Use specific 'workday' property
+        
         // Extract year and month from the workday date
         const date = new Date(newWorkday.date);
         const year = date.getFullYear();
@@ -81,7 +103,7 @@ export function useCreateWorkday() {
         });
         
         // Invalidate day query for this specific date
-        const dateString = newWorkday.date.toISOString().split('T')[0];
+        const dateString = newWorkday.date;
         queryClient.invalidateQueries({ 
           queryKey: queryKeys.workdays.calendar.day(dateString)
         });
@@ -104,7 +126,11 @@ export function useUpdateWorkday() {
       success: "Workday updated successfully",
       error: "Failed to update workday",
       operationName: 'updateWorkday',
-      onSuccessCallback: (updatedWorkday) => {
+      onSuccessCallback: (response) => {
+        if (!response.success) return;
+        
+        const updatedWorkday = response.workday; // Use specific 'workday' property
+        
         // Extract year and month from the workday date
         const date = new Date(updatedWorkday.date);
         const year = date.getFullYear();
@@ -116,7 +142,7 @@ export function useUpdateWorkday() {
         });
         
         // Invalidate day query for this specific date
-        const dateString = updatedWorkday.date.toISOString().split('T')[0];
+        const dateString = updatedWorkday.date;
         queryClient.invalidateQueries({ 
           queryKey: queryKeys.workdays.calendar.day(dateString)
         });
@@ -175,7 +201,13 @@ export function useDeleteWorkday() {
 export function useGetMonthlyStats(year: number, month: number) {
   return useQuery({
     queryKey: queryKeys.workdays.stats.monthly(year, month),
-    queryFn: () => workdayService.getMonthlyStats(year, month),
+    queryFn: async () => {
+      const response = await workdayService.getMonthlyStats(year, month);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.stats; // Use specific 'stats' property instead of generic 'data'
+    },
     staleTime: WORKDAY_STATS_STALE_TIME,
     ...createRetryConfig(1),
   });
@@ -187,7 +219,13 @@ export function useGetMonthlyStats(year: number, month: number) {
 export function useGetYearlyStats(year: number) {
   return useQuery({
     queryKey: queryKeys.workdays.stats.yearly(year),
-    queryFn: () => workdayService.getYearlyStats(year),
+    queryFn: async () => {
+      const response = await workdayService.getYearlyStats(year);
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.stats; // Use specific 'stats' property instead of generic 'data'
+    },
     staleTime: WORKDAY_STATS_STALE_TIME,
     ...createRetryConfig(1),
   });

@@ -11,7 +11,7 @@ import { ExportManagerClient } from './_components/export-manager-client';
 
 export const metadata: Metadata = {
   title: 'Data Export | Admin | Simple Tracker',
-  description: 'Export tickets and workday data',
+  description: 'Export tickets and workday data'
 };
 
 export default function DataExportPage() {

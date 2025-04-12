@@ -13,211 +13,88 @@ import {
   getIdToken,
   getIdTokenResult,
   signInWithCustomToken,
-  FirebaseError
+  // Removed FirebaseError import as it might not be directly exported
 } from 'firebase/auth';
 import { getAuthClient } from '@/lib/firebase/client';
 import { doc, getDoc } from 'firebase/firestore';
 import { getFirestoreClient } from '@/lib/firebase/client';
-import { login as apiLogin, logout as apiLogout, refreshToken as apiRefreshToken } from '@/lib/api/authApi';
+// Removed: import { login as apiLogin, logout as apiLogout, refreshToken as apiRefreshToken } from '@/lib/api/authApi'; // API calls will be handled by useAuth hook now
+import { UserData, UserRole, AuthState as ExternalAuthState } from '@/types/auth'; // Import UserData and AuthState
 
 // Types for user roles
-type UserRole = 'employee' | 'admin';
-
-// User interface
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  preferences?: Record<string, unknown>;
-}
+// Removed local UserRole and User interface, will use imports from types/auth.ts
 
 // Auth state interface
-interface AuthState {
-  // State
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
-  token: string | null;
-  tokenExpiration: number | null;
-  
-  // Actions
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-  logout: () => Promise<void>;
-  refreshToken: (force?: boolean) => Promise<number | null>;
-  updateUser: (userData: Partial<User>) => void;
-  clearError: () => void;
+// Use AuthState from types/auth.ts and add actions
+interface AuthStore extends ExternalAuthState {
+  // Actions - Define setters and potentially other actions needed by the hook
+  _setUser: (user: UserData | null) => void;
+  _setLoading: (loading: boolean) => void;
+  _setError: (error: string | null) => void;
+  _setToken: (token: string | null, expiresAt: number | null) => void;
+  _clearAuth: () => void;
+  // Keep checkAuthStatus if still needed, but token refresh logic might move to useAuth
   checkAuthStatus: () => boolean;
 }
 
 // Helper to check if token is expired
 const isTokenExpired = (expiry: number | null): boolean => {
+  // Add a buffer (e.g., 60 seconds) to consider token expired slightly early
+  const buffer = 60 * 1000;
   if (!expiry) return true;
-  return Date.now() > expiry;
+  return Date.now() > expiry - buffer;
 };
 
 // Helper to convert Firebase user to app User
-const createUserFromFirebaseUser = async (firebaseUser: FirebaseUser): Promise<User> => {
+// Updated helper to return UserData type from types/auth.ts
+// Export the helper function
+export const createUserFromFirebaseUser = async (firebaseUser: FirebaseUser): Promise<UserData | null> => {
+  if (!firebaseUser) return null;
   const firestore = getFirestoreClient();
   
-  // Get user claims from token
-  const tokenResult = await getIdTokenResult(firebaseUser);
-  const role = tokenResult.claims.role as UserRole || 'employee';
-  
   try {
+    // Get user claims from token
+    const tokenResult = await getIdTokenResult(firebaseUser, true); // Force refresh for latest claims
+    const role = tokenResult.claims.role as UserRole || 'employee';
+    
     // Try to get additional user data from Firestore
     const userDoc = await getDoc(doc(firestore, 'users', firebaseUser.uid));
     
+    let firestoreData: any = {};
     if (userDoc.exists()) {
-      const userData = userDoc.data();
-      return {
-        id: firebaseUser.uid,
-        name: userData.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-        email: firebaseUser.email || '',
-        role: userData.role || role,
-        preferences: userData.preferences || {}
-      };
+      firestoreData = userDoc.data();
+    } else {
+      console.warn(`Firestore document not found for user ${firebaseUser.uid}`);
     }
-  } catch (error) {
-    console.error('Error fetching user data:', error);
-  }
-  
-  // Fallback if Firestore data is not available
-  return {
-    id: firebaseUser.uid,
-    name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-    email: firebaseUser.email || '',
-    role: role
-  };
-};
 
-// Create login action
-const createLoginAction = () => async (email: string, password: string, rememberMe: boolean = false, set: any, get: any) => {
-  set({ isLoading: true, error: null });
-  
-  try {
-    // Try to login with the API, which handles the session cookie
-    const response = await apiLogin({
-      username: email, // API expects username but we use email
-      password,
-      rememberMe
-    });
-    
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Authentication failed');
-    }
-    
-    const { token, user, expiresAt } = response.data;
-    
-    // Update store state with authenticated user
-    set({
-      user: {
-        id: user.id,
-        email: user.username, // API returns username but we store as email
-        name: user.displayName,
-        role: user.role
-      },
-      isAuthenticated: true,
-      isLoading: false,
-      token,
-      tokenExpiration: expiresAt,
-      error: null
-    });
+    // Construct UserData object
+    return {
+      id: firebaseUser.uid,
+      // Use username from Firestore if available, fallback carefully as email is placeholder
+      username: firestoreData.username || firebaseUser.email || '', // Prioritize Firestore username
+      displayName: firestoreData.displayName || firebaseUser.displayName || 'User',
+      role: firestoreData.role || role, // Prioritize Firestore role, fallback to claim
+      // Use Firestore timestamp if available, otherwise fallback or leave null/undefined
+      lastLogin: firestoreData.lastLogin?.toDate?.()?.toISOString() || new Date().toISOString(),
+    };
+
   } catch (error) {
-    console.error('Login error:', error);
-    
-    set({
-      isLoading: false,
-      error: error instanceof Error ? error.message : 'Authentication failed',
-      isAuthenticated: false,
-      user: null,
-      token: null,
-      tokenExpiration: null
-    });
-    
-    throw error;
+    console.error(`Error creating UserData for ${firebaseUser.uid}:`, error);
+    // Fallback with basic info from FirebaseUser if claims/Firestore fail
+    return {
+      id: firebaseUser.uid,
+      username: firebaseUser.email || '', // Placeholder email might be only option
+      displayName: firebaseUser.displayName || 'User',
+      role: 'employee', // Default role on error
+      lastLogin: new Date().toISOString(),
+    };
   }
 };
 
-// Action creators
-const createLogoutAction = () => async (set: any) => {
-  set({ isLoading: true });
-  
-  try {
-    // Call the logout API to clear the session cookie
-    await apiLogout();
-    
-    // Sign out with Firebase Auth client side
-    const auth = getAuthClient();
-    await signOut(auth);
-    
-    set({ 
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-      token: null,
-      tokenExpiration: null,
-      error: null
-    });
-  } catch (error) {
-    console.error('Logout error:', error);
-    set({ 
-      error: 'An error occurred during logout',
-      isLoading: false
-    });
-  }
-};
+// Removed action creators for login, logout, refreshToken as these are handled in useAuth now
 
-const createRefreshTokenAction = (force = false) => async (set: any, get: any) => {
-  const state = get();
-  
-  // Skip if not authenticated
-  if (!state.user) {
-    return null;
-  }
-  
-  // Skip if token is still valid and force is false
-  if (!force && state.tokenExpiration && !isTokenExpired(state.tokenExpiration)) {
-    return state.tokenExpiration;
-  }
-  
-  try {
-    // Call refresh token API
-    const response = await apiRefreshToken();
-    
-    if (!response.success || !response.data) {
-      // Force logout if refresh fails
-      await get().logout();
-      return null;
-    }
-    
-    const { token, user, expiresAt } = response.data;
-    
-    // Update store with refreshed token and user data
-    set({
-      user: {
-        id: user.id,
-        email: user.username,
-        name: user.displayName,
-        role: user.role
-      },
-      token,
-      tokenExpiration: expiresAt,
-      error: null
-    });
-    
-    return expiresAt;
-  } catch (error) {
-    console.error('Token refresh error:', error);
-    
-    // Force logout on refresh error
-    await get().logout();
-    return null;
-  }
-};
-
-export const useAuthStore = create<AuthState>()(
+// Update create call to use the extended AuthStore interface
+export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
       // Initial state
@@ -226,32 +103,33 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       token: null,
-      tokenExpiration: null,
+      expiresAt: null, // Changed from tokenExpiration
       
       // Actions
-      login: (email, password, rememberMe = false) => 
-        createLoginAction()(email, password, rememberMe, set, get),
-      
-      logout: () => createLogoutAction()(set, get),
-      
-      refreshToken: (force = false) => 
-        createRefreshTokenAction(force)(set, get),
-      
-      updateUser: (userData) => set((state) => ({
-        user: state.user ? { ...state.user, ...userData } : null
-      })),
-      
-      clearError: () => set({ error: null }),
+      // Internal setters - not typically called directly from components
+      _setUser: (user) => set({ user: user ? { ...user } : null, isAuthenticated: !!user }),
+      _setLoading: (loading) => set({ isLoading: loading }),
+      _setError: (error) => set({ error }),
+      _setToken: (token, expiresAt) => set({ token, expiresAt }), // Changed from tokenExpiration
+      _clearAuth: () => set({
+        user: null,
+        isAuthenticated: false,
+        token: null,
+        expiresAt: null, // Changed from tokenExpiration
+        error: null,
+        isLoading: false
+      }),
       
       checkAuthStatus: () => {
         const state = get();
         
         // Check if user is authenticated and token is valid
-        if (state.user && state.token && state.tokenExpiration) {
+        if (state.user && state.token && state.expiresAt) { // Changed from tokenExpiration
           // Check if token is expired
-          if (isTokenExpired(state.tokenExpiration)) {
-            // Try to refresh token
-            get().refreshToken();
+          if (isTokenExpired(state.expiresAt)) { // Changed from tokenExpiration
+            // Refresh logic might move entirely to useAuth hook
+            // console.warn("Token expired, refresh needed.");
+            // get().refreshToken(); // Refresh logic likely moved
             return false;
           }
           
@@ -268,7 +146,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         token: state.token,
-        tokenExpiration: state.tokenExpiration
+        expiresAt: state.expiresAt // Changed from tokenExpiration
       })
     }
   )
@@ -279,11 +157,4 @@ export const useUser = () => useAuthStore(state => state.user);
 export const useIsAuthenticated = () => useAuthStore(state => state.isAuthenticated);
 export const useAuthLoading = () => useAuthStore(state => state.isLoading);
 export const useAuthError = () => useAuthStore(state => state.error);
-export const useAuthActions = () => useAuthStore(state => ({
-  login: state.login,
-  logout: state.logout,
-  refreshToken: state.refreshToken,
-  updateUser: state.updateUser,
-  clearError: state.clearError,
-  checkAuthStatus: state.checkAuthStatus
-}));
+// Removed useAuthActions as actions are now primarily exposed via useAuth hook

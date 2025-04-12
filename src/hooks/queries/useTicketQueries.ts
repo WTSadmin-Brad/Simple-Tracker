@@ -43,7 +43,13 @@ export function useTicketQueries() {
   const useTickets = (filters: TicketFilterParams = {}) => {
     return useQuery({
       queryKey: queryKeys.tickets.list(filters),
-      queryFn: () => getTickets(filters),
+      queryFn: async () => {
+        const response = await getTickets(filters);
+        if (!response.success) {
+          throw new Error(response.message);
+        }
+        return response.tickets; // Use specific 'tickets' property instead of generic 'data'
+      },
       staleTime: TICKET_LIST_STALE_TIME,
       ...createRetryConfig(2),
     });
@@ -53,7 +59,13 @@ export function useTicketQueries() {
   const useTicket = (id: string | null) => {
     return useQuery({
       queryKey: queryKeys.tickets.detail(id || ''),
-      queryFn: () => getTicketById(id || ''),
+      queryFn: async () => {
+        const response = await getTicketById(id || '');
+        if (!response.success) {
+          throw new Error(response.message);
+        }
+        return response.ticket; // Use specific 'ticket' property instead of generic 'data'
+      },
       enabled: !!id, // Only run the query if an ID is provided
       staleTime: TICKET_DETAIL_STALE_TIME,
       ...createRetryConfig(2),
@@ -64,7 +76,13 @@ export function useTicketQueries() {
   const useWizardData = () => {
     return useQuery({
       queryKey: queryKeys.tickets.wizard.data(),
-      queryFn: () => getWizardData(),
+      queryFn: async () => {
+        const response = await getWizardData();
+        if (!response.success) {
+          throw new Error(response.message);
+        }
+        return response.wizardData || response; // Look for wizardData property, fallback to the response itself
+      },
       staleTime: WIZARD_DATA_STALE_TIME,
       refetchOnWindowFocus: false,
       ...createRetryConfig(1),

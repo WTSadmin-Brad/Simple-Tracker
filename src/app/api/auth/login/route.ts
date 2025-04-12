@@ -8,149 +8,92 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { getAuthAdmin } from '@/lib/firebase/admin';
-import { getAuthClient } from '@/lib/firebase/client';
+// Removed: import { signInWithEmailAndPassword } from 'firebase/auth';
+// Removed: import { getAuthClient } from '@/lib/firebase/client';
+// Removed: import { cookies } from 'next/headers';
+import { getAuthAdmin, getFirestoreAdmin } from '@/lib/firebase/admin'; // Added getFirestoreAdmin
 import { handleApiError, validateRequest } from '@/lib/api/middleware';
-import { ApiResponse } from '@/types/api';
-import { AuthResponse, LoginRequest, UserData } from '@/types/auth';
-import { cookies } from 'next/headers';
+import { createSuccessResponse, createErrorResponse } from '@/lib/api/responseUtils';
+import { LoginRequest } from '@/types/auth'; // Removed AuthResponse, UserData
+import { ErrorCodes } from '@/lib/errors/error-types';
+import bcrypt from 'bcrypt'; // Added bcrypt
 
 // Define validation schema for login requests
+// Updated schema for username/password login
 const loginSchema = z.object({
-  username: z.string().email('Please enter a valid email address'),
+  username: z.string().min(3, 'Username is required'), // Changed from email
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  rememberMe: z.boolean().optional().default(false),
+  // Removed rememberMe
 });
 
-// Session expiration times
-const SESSION_EXPIRES_IN = {
-  // 5 days for "remember me"
-  LONG: 60 * 60 * 24 * 5 * 1000,
-  // 1 day for standard session
-  SHORT: 60 * 60 * 24 * 1 * 1000,
-};
-
-// Cookie configuration
-const AUTH_COOKIE = '__session';
+// Removed Session expiration times and Cookie configuration
 
 /**
  * Process login request and create authenticated session
  */
+// Rewritten handler for username/password + custom token flow
 async function loginHandler(
-  data: LoginRequest,
-  request: Request
-): Promise<NextResponse<ApiResponse<AuthResponse>>> {
+  data: z.infer<typeof loginSchema>, // Use inferred type from schema
+  request: Request // Keep request parameter if needed by validateRequest or future use
+): Promise<NextResponse> {
   try {
-    const { username: email, password, rememberMe = false } = data;
-    const auth = getAuthAdmin();
-    
-    try {
-      // Try to find user by email first
-      const userRecord = await auth.getUserByEmail(email);
-      
-      // Check if user is disabled
-      if (userRecord.disabled) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'This account has been disabled. Please contact an administrator.'
-          },
-          { status: 403 }
-        );
-      }
+    const { username, password } = data;
+    const db = getFirestoreAdmin();
+    const authAdmin = getAuthAdmin();
 
-      // Use Firebase client SDK for password validation
-      // This is a secure approach as it's happening server-side
-      const clientAuth = getAuthClient();
-      const userCredential = await signInWithEmailAndPassword(
-        clientAuth, 
-        email, 
-        password
-      );
-      
-      if (!userCredential || !userCredential.user) {
-        throw new Error('Authentication failed');
-      }
-      
-      // Get Firebase ID token
-      const idToken = await userCredential.user.getIdToken();
-      
-      // Create a session cookie
-      const expiresIn = rememberMe ? SESSION_EXPIRES_IN.LONG : SESSION_EXPIRES_IN.SHORT;
-      const sessionCookie = await auth.createSessionCookie(idToken, { expiresIn });
-      
-      // Set the session cookie
-      cookies().set(AUTH_COOKIE, sessionCookie, {
-        maxAge: expiresIn / 1000, // Convert to seconds
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        path: '/',
-        sameSite: 'strict',
-      });
-      
-      // Get user claims
-      const customClaims = userRecord.customClaims || {};
-      const role = customClaims.role || 'employee';
-      
-      // Prepare response with user data
-      const userData: UserData = {
-        id: userRecord.uid,
-        username: email,
-        displayName: userRecord.displayName || email.split('@')[0],
-        role,
-        lastLogin: new Date().toISOString()
-      };
-      
-      // Update last login time in Firestore (async, don't await)
-      // This helps track user activity without slowing down the login response
-      updateLastLogin(userRecord.uid, userData.lastLogin).catch(error => {
-        console.error('Error updating last login:', error);
-      });
-      
-      // Return authentication response
-      return NextResponse.json({
-        success: true,
-        data: {
-          token: idToken,
-          user: userData,
-          expiresAt: Date.now() + expiresIn
-        }
-      });
-    } catch (error) {
-      console.error('Login error:', error);
-      
-      // Handle credential errors
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid username or password'
-        },
-        { status: 401 }
-      );
+    // 1. Find user by username in Firestore
+    const usersRef = db.collection('users');
+    const userQuery = await usersRef.where('username', '==', username).limit(1).get();
+
+    if (userQuery.empty) {
+      console.warn(`Login attempt failed: Username not found - ${username}`);
+      return createErrorResponse('Invalid username or password', ErrorCodes.AUTH_INVALID_CREDENTIALS, 401);
     }
+
+    // 2. Get user data and UID
+    const userDoc = userQuery.docs[0];
+    const userData = userDoc.data();
+    const uid = userDoc.id;
+
+    // 3. Check if account is active
+    if (!userData.isActive) {
+      console.warn(`Login attempt failed: Account deactivated - ${username} (UID: ${uid})`);
+      return createErrorResponse('Account deactivated', 'auth/account-disabled', 403); // Consider adding specific error code
+    }
+
+    // 4. Verify password hash
+    const storedHash = userData.passwordHash;
+    if (!storedHash) {
+       console.error(`Login attempt failed: Missing password hash for user ${username} (UID: ${uid})`);
+       // This indicates a problem during user creation/update
+       return createErrorResponse('Authentication error. Please contact support.', 'auth/internal-error', 500);
+    }
+
+    const passwordMatch = await bcrypt.compare(password, storedHash);
+
+    if (!passwordMatch) {
+      console.warn(`Login attempt failed: Invalid password for user ${username} (UID: ${uid})`);
+      return createErrorResponse('Invalid username or password', ErrorCodes.AUTH_INVALID_CREDENTIALS, 401);
+    }
+
+    // 5. Create Custom Token
+    console.log(`Password verified for user: ${username} (UID: ${uid}). Creating custom token.`);
+    const customToken = await authAdmin.createCustomToken(uid);
+
+    // 6. Return custom token to client
+    // Client will use signInWithCustomToken to get ID token
+    return NextResponse.json({ customToken });
+    // Optionally use createSuccessResponse:
+    // return createSuccessResponse('Custom token generated', { customToken }, 'auth');
+
   } catch (error) {
-    return handleApiError(error, 'Login failed');
+    // Log the error properly before handling
+    console.error(`Unexpected error during login for user ${data.username}:`, error);
+    return handleApiError(error, 'Login failed due to an unexpected error');
   }
 }
 
-/**
- * Updates the user's last login timestamp in Firestore
- */
-async function updateLastLogin(userId: string, timestamp: string) {
-  const { getFirestoreAdmin } = await import('@/lib/firebase/admin');
-  const db = getFirestoreAdmin();
-  
-  try {
-    await db.collection('users').doc(userId).update({
-      lastLogin: timestamp,
-      lastActive: timestamp
-    });
-  } catch (error) {
-    // Don't throw, just log the error
-    console.error('Error updating last login in Firestore:', error);
-  }
-}
+// Removed updateLastLogin function (no longer needed here, session logic removed)
 
 // Export POST handler with validation
 export const POST = validateRequest(loginSchema, loginHandler);

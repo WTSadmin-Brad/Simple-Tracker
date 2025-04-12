@@ -2,8 +2,8 @@
 
 ## title: Simple Tracker Firebase Implementation
 
-date: 2025-03-27
-tags: [firebase, database, authentication, storage, security, data-model]
+date: 2025-04-06
+tags: [firebase, database, authentication, storage, security, data-model, firestore]
 status: official
 author: Development Team
 
@@ -11,37 +11,37 @@ author: Development Team
 
 ## Table of Contents
 
-1. [Overview](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#overview)
-2. [Firebase Architecture](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#firebase-architecture)
-3. [Firebase Client Implementation](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#firebase-client-implementation)
-4. [Firebase Admin Implementation](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#firebase-admin-implementation)
-5. [Data Model](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#data-model)
-6. [Authentication Framework](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#authentication-framework)
-7. [Security Rules](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#security-rules)
-8. [Storage Implementation](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#storage-implementation)
-9. [Performance Optimization](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#performance-optimization)
-10. [Best Practices](https://claude.ai/chat/df8f68a2-6afc-441b-93de-7ef51fe17655#best-practices)
+1.  [Overview](#overview)
+2.  [Firebase Architecture](#firebase-architecture)
+3.  [Firebase Client Implementation](#firebase-client-implementation)
+4.  [Firebase Admin Implementation](#firebase-admin-implementation)
+5.  [Data Model](#data-model)
+6.  [Authentication Framework](#authentication-framework)
+7.  [Security Rules](#security-rules)
+8.  [Storage Implementation](#storage-implementation)
+9.  [Performance Optimization](#performance-optimization)
+10. [Best Practices](#best-practices)
 
 ## Overview
 
-Simple Tracker uses Firebase as its primary backend platform, leveraging Firebase Authentication, Firestore, and Cloud Storage. This document describes the implementation architecture, patterns, and best practices used throughout the application.
+Simple Tracker uses Firebase as its primary backend platform, leveraging Firebase Authentication, Firestore, and Cloud Storage. This document describes the implementation architecture, patterns, and best practices used throughout the application, reflecting the current state based on `Data_Models_Schema.md`, `firestore.rules`, `firestore.indexes.json`, and `storage.rules`.
 
 ### Core Firebase Services
 
 The application utilizes three primary Firebase services:
 
-1. **Firebase Authentication**: Manages user identity and access control
-2. **Firestore**: NoSQL document database for storing application data
-3. **Cloud Storage**: Object storage for user-uploaded images
+1.  **Firebase Authentication**: Manages user identity and access control.
+2.  **Firestore**: NoSQL document database for storing application data.
+3.  **Cloud Storage**: Object storage for user-uploaded images, exports, and archives.
 
 ### Implementation Philosophy
 
 Simple Tracker's Firebase implementation follows these core principles:
 
-1. **Security**: Strict access controls at multiple levels (authentication, role-based permissions, security rules)
-2. **Performance**: Optimized data structure and query patterns for responsive user experience
-3. **Simplicity**: Clear patterns and predictable behavior for maintainability
-4. **Scalability**: Design that accommodates future growth and feature expansion
+1.  **Security**: Strict access controls at multiple levels (authentication, role-based permissions via custom claims, security rules).
+2.  **Performance**: Optimized data structure, query patterns, and indexing for a responsive user experience.
+3.  **Simplicity**: Clear patterns and predictable behavior for maintainability.
+4.  **Scalability**: Design that accommodates future growth and feature expansion.
 
 ## Firebase Architecture
 
@@ -51,17 +51,14 @@ The Firebase implementation follows a layered architecture separating client-sid
 
 The application maintains strict separation between client-side and server-side Firebase access:
 
-1. **Client SDK**: Used in browser context for direct user actions
-   
-   - Limited to user-specific operations
-   - Subject to Firestore security rules
-   - Access controlled by authentication state
-
-2. **Admin SDK**: Used in server context (API routes) for privileged operations
-   
-   - Administrative operations
-   - Cross-user data access
-   - Security rule bypassing
+1.  **Client SDK**: Used in browser context for direct user actions.
+    *   Limited to user-specific operations.
+    *   Subject to Firestore and Storage security rules.
+    *   Access controlled by authentication state.
+2.  **Admin SDK**: Used in server context (API routes, backend functions) for privileged operations, including custom token minting and ID token verification.
+    *   Administrative operations (user management, data exports/archives).
+    *   Cross-user data access.
+    *   Security rule bypassing for trusted server environments.
 
 ### Directory Structure
 
@@ -69,18 +66,18 @@ The application maintains strict separation between client-side and server-side 
 /src
   /lib
     /firebase
-      /client.ts       # Client-side Firebase implementation
-      /admin.ts        # Server-side Firebase implementation
+      /client.ts       # Client-side Firebase initialization and accessors
+      /admin.ts        # Server-side Firebase initialization and accessors
     /api
-      /middleware.ts   # Authentication middleware for API routes
+      /middleware.ts   # Authentication middleware for API routes using Admin SDK
 ```
 
 ### Service Access Pattern
 
 Firebase services are accessed through centralized getter functions that ensure consistent initialization:
 
-- Client-side: `getFirestoreClient()`, `getStorageClient()`, `getAuthClient()`
-- Server-side: `getFirestoreAdmin()`, `getStorageAdmin()`, `getAuthAdmin()`
+-   Client-side: `getFirestoreClient()`, `getStorageClient()`, `getAuthClient()`
+-   Server-side: `getFirestoreAdmin()`, `getStorageAdmin()`, `getAuthAdmin()`
 
 ## Firebase Client Implementation
 
@@ -88,270 +85,281 @@ The client-side Firebase implementation provides browser-safe access to Firebase
 
 ### Client Initialization
 
-Firebase client SDK is initialized using environment variables with appropriate security considerations:
+Firebase client SDK is initialized using environment variables (`NEXT_PUBLIC_FIREBASE_*`) with appropriate security considerations:
 
-- API keys and configuration stored in environment variables
-- Service initialization only when needed
-- Singleton pattern for service instances
+-   API keys and configuration stored securely.
+-   Service initialization only when needed (lazy loading).
+-   Singleton pattern for service instances.
 
 ### Client-Side Service Access
 
-Client-side code accesses Firebase services through getter functions that ensure proper initialization and configuration:
+Client-side code accesses Firebase services through getter functions:
 
-- Authentication state tracking
-- User profile management
-- Document access restricted by security rules
-- File uploads with user-specific permissions
+-   Authentication state tracking via `onAuthStateChanged`.
+-   User profile management (limited updates allowed by rules).
+-   Document access restricted by Firestore security rules.
+-   File uploads governed by Storage security rules.
 
 ### Client Security Considerations
 
 The client implementation includes specific security measures:
 
-- Token refresh management
-- Secure handling of authentication state
-- Error handling for permission violations
-- No direct exposure of sensitive methods
+-   Token refresh management handled automatically by the SDK.
+-   Secure handling of authentication state (e.g., using context providers).
+-   Error handling for permission violations from Firestore/Storage rules.
+-   No exposure of sensitive Admin SDK capabilities.
 
 ## Firebase Admin Implementation
 
-The server-side Firebase implementation provides privileged access for administrative operations and cross-user functionality.
+The server-side Firebase implementation provides privileged access for administrative operations and cross-user functionality, typically within Next.js API routes or dedicated backend functions.
 
 ### Admin Initialization
 
-The Admin SDK is initialized with service account credentials:
+The Admin SDK is initialized with service account credentials stored securely in server-side environment variables:
 
-- Server-side only initialization
-- Secure credential management
-- Firestore admin access
-- Storage admin access
+-   Server-side only initialization.
+-   Secure credential management (e.g., Google Secret Manager or environment variables).
+-   Provides full access to Firestore, Storage, and Auth APIs.
 
 ### API Route Integration
 
 Admin SDK operations are integrated with API routes:
 
-- Authentication middleware verification
-- Role-based access control
-- Cross-user data operations
-- Batch processing
+-   Authentication middleware **mandatorily verifies** user ID tokens using `authAdmin.verifyIdToken()`.
+-   Role-based access control checks **verified custom claims** (e.g., `role`) extracted from the server-verified ID token.
+-   Enables cross-user data operations (e.g., fetching all workdays for an admin).
+-   Supports batch processing and transactions.
 
 ### Administrative Operations
 
 The Admin SDK enables specialized administrative operations:
 
-- User management (creation, updates, deletion)
-- Role assignments via custom claims
-- Data migration and archiving
-- System-wide operations
+-   User management (creation with secure password hashing, updates, deletion).
+-   Setting custom claims (e.g., `role`) for role-based access control.
+-   Minting Firebase Custom Tokens for the username/password flow.
+-   Verifying ID Tokens for secure API access.
+-   **Note:** The Admin SDK is now a required dependency for core authentication and authorization logic.
+-   Data migration, export generation, and archiving processes.
+-   System-wide operations bypassing standard security rules.
 
 ## Data Model
 
-Firestore data is organized into collections with standardized document schemas.
+Firestore data is organized into collections with standardized document schemas, as defined in `Data_Models_Schema.md`.
 
 ### Collection Structure
 
 The database uses the following primary collections:
 
-- **users**: User profiles and preferences
-- **tickets**: Ticket submissions from field workers
-- **workdays**: Daily work records and status
-- **jobsites**: Information about work locations
-- **trucks**: Equipment information
-- **tempImages**: Temporary image storage during submission
-- **wizardState**: In-progress ticket wizard state
-- **archiveIndex**: References to archived data
-- **exports**: Export metadata and links
+-   **`users`**: User profiles, roles, and preferences, linked to Firebase Auth UID.
+-   **`jobsites`**: Information about work locations, managed by admins.
+-   **`trucks`**: Equipment information, managed by admins.
+-   **`workdays`**: Employee daily work records (hours, type, jobsite).
+-   **`tickets`**: Ticket submissions from field workers, including categorized counts and image references.
+-   **`wizardStates`**: Optional temporary storage for multi-step ticket wizard progress.
+-   **`exports`**: Metadata and download links for generated data exports.
+-   **`archives`**: Metadata for archived records (tickets, workdays).
+
+*(Refer to `Data_Models_Schema.md` for detailed schemas and relationships.)*
 
 ### Document Schemas
 
-Each collection follows a standardized document structure with consistent field patterns:
+Each collection follows a standardized document structure. Key fields are highlighted below; see `Data_Models_Schema.md` for the complete schemas.
 
-#### Users Collection
+#### Users Collection (`users`)
 
-Stores employee and admin account information:
+Stores employee and admin account information. Document ID typically matches Firebase Auth UID.
 
-- `username`: Unique login identifier
-- `role`: Either "employee" or "admin"
-- `createdAt`: When the user was created
-- `createdBy`: Admin who created the user
-- `updatedAt`: When the user was last updated
-- `updatedBy`: Admin who last updated the user
-- `animationPrefs`: User animation preferences
+-   `email`: User's login email (string).
+-   `displayName`: User's display name (string).
+-   `role`: `'admin'` or `'employee'` (string).
+-   `status`: `'active'`, `'inactive'`, or `'pending'` (string).
+-   `isActive`: Derived or specific active flag (boolean).
+-   `uid`: Firebase Auth UID (string).
+-   `createdAt`, `updatedAt`: Timestamps.
 
-#### Tickets Collection
+#### Tickets Collection (`tickets`)
 
-Stores ticket submissions with images:
+Stores ticket submissions with categorized counts and image references.
 
-- `userId`: Links to users collection
-- `date`: Date of ticket submission
-- `truckNumber`: Truck identifier
-- `truckNickname`: Display name from trucks collection
-- `jobsite`: Matches jobsites.id
-- Category counts (hangers, leaners)
-- `total`: Auto-sum of all ticket categories
-- `images`: Firebase Storage URLs (active images)
-- `thumbnails`: Thumbnail image URLs for previews
-- `submissionDate`: When ticket was submitted
-- Archive-related fields for data lifecycle management
+-   `date`: Date of ticket submission (Timestamp).
+-   `truckNumber`: Identifier of the truck used (string).
+-   `jobsite`: Reference to `jobsites.id` (string).
+-   `categories`: Map of category IDs/names to counts (`{ [key: string]: number }`).
+-   `imageUrls`: Array of Firebase Storage URLs for associated images (array of strings).
+-   `userId`: Reference to `users.id` (string, optional).
+-   `total`: Auto-calculated sum of category counts (number, optional).
+-   `imageCount`: Auto-calculated count of images (number, optional).
+-   `submissionDate`: Timestamp when ticket was submitted (Timestamp, optional).
+-   `archiveStatus`: `'active'`, `'images_archived'`, or `'fully_archived'` (string, optional).
+-   `createdAt`, `updatedAt`: Timestamps.
 
-#### Workdays Collection
+#### Workdays Collection (`workdays`)
 
-Tracks daily work status (full/half/off days):
+Tracks employee daily work status and hours.
 
-- `userId`: Links to users.username
-- `date`: Date of workday
-- `jobsite`: Matches jobsites.id
-- `workType`: "full", "half", or "off"
-- `submissionDate`: Initial submission timestamp
-- `editableUntil`: submission date + 7 days
-- `isFuturePrediction`: Flag for dates in the future
-- Archive-related fields for data lifecycle management
+-   `userId`: Reference to `users.id` (string).
+-   `date`: Date of workday (Timestamp).
+-   `jobsite`: Reference to `jobsites.id` (string).
+-   `workType`: `'regular'`, `'overtime'`, `'holiday'`, `'sick'`, `'vacation'` (string).
+-   `hours`: Number of hours worked/recorded (number).
+-   `status`: `'active'` or `'archived'` (string).
+-   `isPrediction`: Flag for future projections vs actual entries (boolean, optional).
+-   `createdAt`, `updatedAt`: Timestamps.
+
+#### Exports Collection (`exports`)
+
+Stores metadata for data exports generated by administrators.
+
+-   `type`: `'tickets'` or `'workdays'` (string).
+-   `format`: `'csv'`, `'excel'`, or `'json'` (string).
+-   `url`: Download URL for the exported file (string).
+-   `filename`: Name of the exported file (string).
+-   `status`: `'completed'`, `'processing'`, or `'error'` (string).
+-   `userId`: Admin user ID who initiated the export (string).
+-   `createdAt`, `expiresAt`: Timestamps.
+
+#### Archives Collection (`archives`)
+
+Stores metadata for individual archived items (tickets, workdays).
+
+-   `type`: `'ticket'` or `'workday'` (string).
+-   `originalId`: Document ID of the item in its original collection (string).
+-   `title`: Descriptive title for the archived item (string).
+-   `date`: Relevant date of the original item (Timestamp).
+-   `status`: `'archived'` or `'restored'` (string).
+-   `archivedBy`: Admin user ID who archived the item (string).
+-   `archivedAt`: Timestamp.
 
 ### Data Relationships
 
-The data model uses document references to establish relationships:
+The data model uses document references (primarily document IDs) to establish relationships. Denormalization is used strategically for performance.
 
-- **One-to-Many Relationships**:
-  
-  - `users.username` → `workdays.userId`
-  - `users.username` → `tickets.userId`
-  - `jobsites.id` → `workdays.jobsite`
-  - `jobsites.id` → `tickets.jobsite`
-  - `trucks.id` → `tickets.truckNumber`
+-   **References**:
+    -   `workdays.userId` → `users.id`
+    -   `workdays.jobsite` → `jobsites.id`
+    -   `tickets.userId` → `users.id`
+    -   `tickets.jobsite` → `jobsites.id`
+    -   `exports.userId` → `users.id` (Admin)
+    -   `archives.archivedBy` → `users.id` (Admin)
+    -   `archives.originalId` + `type` → Original document
+-   **Denormalization**:
+    -   Names (`employeeName`, `jobsiteName`, `truckNickname`) may be stored in `workdays` and `tickets`.
+    -   Calculated fields (`total`, `imageCount`) stored in `tickets`.
+    -   Status fields (`status`, `archiveStatus`, `isActive`) used for efficient filtering.
 
-- **Denormalization Strategy**:
-  
-  - Truck nickname stored in tickets for display efficiency
-  - Pre-calculated totals for ticket categories
-  - Thumbnails stored for efficient loading
+*(Refer to `Data_Models_Schema.md` for a detailed relationship map.)*
 
 ## Authentication Framework
 
-Simple Tracker uses Firebase Authentication with a multi-layered approach for security.
+Simple Tracker uses a custom authentication flow built on top of Firebase Authentication, featuring username/password login and role-based access control (RBAC) via verified custom claims. The Firebase Admin SDK is essential for this process.
 
 ### Authentication Flow
 
-The authentication process follows this flow:
+1.  **Login Request**: User submits **username and password** to a custom API endpoint (`/api/auth/login`).
+2.  **Server-Side Validation**: The API route verifies the username and password against securely hashed credentials stored in Firestore (using `bcrypt`).
+3.  **Custom Token Minting**: Upon successful validation, the server uses the **Firebase Admin SDK** (`authAdmin.createCustomToken(uid, { role: userRole })`) to generate a **Firebase Custom Token** containing the user's UID and necessary custom claims (like `role`).
+4.  **Client-Side Sign-In**: The custom token is returned to the client. The client uses the **Firebase Client SDK** (`signInWithCustomToken(customToken)`) to establish an authenticated Firebase session.
+5.  **ID Token Generation**: The Firebase Client SDK automatically exchanges the custom token for a standard Firebase **ID Token** and Refresh Token.
+6.  **API Authentication**: For subsequent requests to protected API routes, the client sends the **ID Token** in the `Authorization: Bearer <ID_token>` header.
+7.  **Server-Side Verification**: API routes and middleware **mandatorily verify** the incoming ID Token using the **Firebase Admin SDK** (`authAdmin.verifyIdToken(idToken)`). This verification confirms the token's validity and securely extracts the user's `uid` and **verified custom claims**.
+8.  **State Tracking**: Client-side uses `onAuthStateChanged` and `getIdTokenResult()` to manage user session state and access verified claims.
 
-1. **Login Process**:
-   
-   - User submits credentials (email/password)
-   - Firebase authenticates and returns tokens
-   - Tokens stored in secure cookies and memory
+### Token Verification (Server-Side Focus)
 
-2. **Token Management**:
-   
-   - Automatic token refresh before expiration
-   - Secure cookie storage for persistence
-   - Memory storage for active session
+**Server-side verification using the Admin SDK (`verifyIdToken`) is the standard and mandatory** way to authenticate API requests and access secure user information (UID, claims). This replaces previous insecure client-side decoding methods. The verified token payload is the source of truth for authorization decisions.
 
-3. **Authentication Verification**:
-   
-   - Client-side: Auth state provider for UI protection
-   - Server-side: Token verification middleware
-   - API routes: User ID extraction from verified tokens
+### Role-Based Access Control (RBAC)
 
-### Token Verification
-
-Authentication tokens are verified at multiple levels:
-
-1. **Client-Side**: Auth state tracking for UI protection
-2. **Next.js Middleware**: Route protection for page access
-3. **API Middleware**: Token extraction and verification
-
-### Role-Based Access Control
-
-The application implements role-based access control:
-
-1. **Role Assignment**: Custom claims in Firebase Auth
-2. **Role Verification**: Server-side checks for admin operations
-3. **UI Protection**: Role-based component rendering
-4. **Permission Hierarchy**: Admin roles include employee permissions
+1.  **Role Assignment**: Admins assign roles (`'admin'` or `'employee'`) by setting **custom claims** on user accounts via the **Firebase Admin SDK** (e.g., during user creation or update).
+2.  **Role Verification (Server-Side)**: Server-side logic (API routes, middleware) checks the **verified custom claims** (e.g., `decodedToken.role`) extracted from the ID token after successful `verifyIdToken` validation.
+3.  **Role Verification (Security Rules)**: Firestore and Storage security rules use `request.auth.token.role` (which reflects the verified claims) to enforce access control at the database/storage level.
+4.  **UI Protection**: Client-side conditionally renders components based on the user's role, obtained securely from the ID token claims via `getIdTokenResult(true)`.
+5.  **Permission Hierarchy**: Admins implicitly have all employee permissions.
 
 ## Security Rules
 
-Firestore security rules enforce data access control based on authentication, roles, and document ownership.
+Firestore (`firestore.rules`) and Cloud Storage (`storage.rules`) security rules enforce data access control based on authentication state (`request.auth`), **verified roles from ID token custom claims (`request.auth.token.role`)**, document ownership (`request.auth.uid`), and data validation.
 
-### Security Rule Structure
+### Security Rule Structure (`firestore.rules`)
 
-Rules follow a consistent pattern with helper functions for reusable logic:
+Rules utilize helper functions for clarity and reusability:
 
-- Authentication checks
-- Role verification
-- Ownership validation
-- Data validation
+-   `isAuthenticated()`: Checks if `request.auth` is not null.
+-   `hasRole(role)`: Checks the **verified** `request.auth.token.role` claim from the ID token.
+-   `isAdmin()`: Checks if the **verified** role claim is 'admin'.
+-   `isOwner(userId)`: Checks if `request.auth.uid` (from the verified token) matches the provided `userId`.
+-   Data validation functions (e.g., `isValidTimestamp`, `isString`, `isValidUserRole`, `isValidTicketCategories`).
 
-### Collection-Specific Rules
+### Collection-Specific Rules (Firestore Summary)
 
-Each collection has tailored security rules:
-
-- **Users**: Admin-only write, user can read own profile
-- **Tickets**: Users can create own tickets, read own tickets, admins can read all
-- **Workdays**: Users can manage own workdays, admins can view all
-- **Reference Data**: Read-only for all authenticated users, admin-only write
+-   **`users`**: Admins can create/delete. Admins or the owner can update specific fields (owners cannot change roles, email, etc.). Authenticated users can generally read profiles.
+-   **`jobsites`, `trucks`**: Only admins can create, update, or delete. Authenticated users can read.
+-   **`workdays`, `tickets`**: Authenticated users can create their own records. Admins or the owner can update (owners have restrictions, e.g., cannot change `userId` or `archiveStatus`). Admins can delete. Read access is generally open to authenticated users (client filters apply). Extensive validation on write operations (required fields, enums, calculations).
+-   **`wizardStates`**: Only the owner (`userId` matching `request.auth.uid`) can read or write their own state document. Validation ensures expiry dates are reasonable.
+-   **`exports`, `archives`**: Only admins can create, read, update, or delete these records. Validation ensures correct types, statuses, and creator IDs.
 
 ### Data Validation
 
-Security rules include data validation:
+Security rules perform server-side data validation on write operations:
 
-- Required fields
-- Field type validation
-- Value range constraints
-- Cross-field validation
+-   Checking required fields (`hasRequiredFields`).
+-   Validating field types (`isString`, `isNumber`, `isMap`, `isArray`, `isValidTimestamp`).
+-   Enforcing enum values (e.g., `isValidUserRole`, `isValidWorkdayType`).
+-   Validating data consistency (e.g., `isValidTicketTotal`, `isValidImageCount`).
+-   Checking ownership and preventing unauthorized field changes (`isOwner`, `isNotChanging`).
+
+### Storage Rules (`storage.rules`)
+
+-   Default deny-all access.
+-   **`users/{userId}/{allPaths=**}`**: Owner can write images (with size/type limits); Owner and Admins can read.
+-   **`tickets/{ticketId}/images/{imageId}`**: Images can only be created (`allow create`) by the user specified in the image metadata (`request.resource.metadata.userId`). Reads allowed by owner or admin. Updates/deletes disallowed.
+-   **`exports/{exportType}/{fileName}`**: Only admins can read/write.
+-   **`archives/{archiveType}/{originalId}/{allPaths=**}`**: Only admins can read/write.
 
 ## Storage Implementation
 
-Firebase Storage manages file storage with organized structure.
+Firebase Storage manages file storage for ticket images, data exports, and potentially archives.
 
 ### Storage Organization
 
-Files are stored in a hierarchical structure:
+Files are organized based on type and ownership, aligning with `storage.rules`:
 
 ```
-/tickets/[userId]/[ticketId]/
-  - images/
-    - image1.jpg
-    - image2.jpg
-  - thumbnails/
-    - image1.jpg
-    - image2.jpg
+# Ticket Images (Example based on rules/schema)
+tickets/{ticketId}/images/{imageId}.jpg
+# Note: Rules use metadata.userId for write auth. Schema suggests path includes userId.
+# Actual implementation might use: tickets/{userId}/{ticketId}/images/{imageId}.jpg
 
-/temp-images/[userId]/
-  - [tempId1].jpg
-  - [tempId2].jpg
+# User-specific files (if any)
+users/{userId}/profile.jpg
 
-/exports/
-  /tickets/
-    - tickets-export-[timestamp].xlsx
-  /workdays/
-    - workdays-export-[timestamp].xlsx
+# Exports (Admin only access)
+exports/{type}/{filename}.{ext}
+# Example: exports/tickets/tickets-export-2025-04-06.xlsx
 
-/archives/
-  /tickets/
-    - [ticketId].json
-    - ticket-images/
-      - [ticketId]-01.jpg
-  /workdays/
-    - [workdayId].json
+# Archives (Admin only access)
+archives/{type}/{originalId}/data.json
+archives/{type}/{originalId}/images/{imageId}.jpg
+# Example: archives/ticket/tkt123/images/image1.jpg
 ```
+
+*(Refer to `storage.rules` and `Data_Models_Schema.md` for definitive paths and access logic.)*
 
 ### Upload Process
 
-File uploads follow a consistent pattern:
+File uploads typically involve:
 
-1. **Temporary Storage**: Files initially uploaded to temp location
-2. **Validation**: File type and size validation
-3. **Processing**: Image optimization and thumbnail creation
-4. **Permanent Storage**: Files moved to permanent location on submission
-5. **Cleanup**: Temporary files automatically removed after expiration
+1.  Client-side selection and validation (type, size).
+2.  Upload directly to the final path using the Firebase Client SDK.
+3.  Storage security rules enforce permissions based on user auth and metadata.
+4.  For tickets, image URLs are stored in the corresponding Firestore `tickets` document.
 
 ### Image Processing
 
-Image files undergo processing:
-
-1. **Compression**: Size optimization for storage efficiency
-2. **Thumbnail Creation**: Generated for list views
-3. **Metadata**: Added for identification and tracking
-4. **Security**: Access control based on authentication
+-   Client-side or server-side (Cloud Functions) processing can be used for:
+    -   Compression/Resizing.
+    -   Thumbnail generation (stored alongside original or in a `thumbnails/` subfolder).
+-   Metadata (like `userId`) should be set during upload for rule enforcement.
 
 ## Performance Optimization
 
@@ -361,25 +369,23 @@ The Firebase implementation includes optimizations for performance.
 
 Queries are optimized using:
 
-1. **Compound Indexes**: Custom indexes for frequently queried combinations
-2. **Query Limiting**: All queries include limits to prevent excessive reads
-3. **Field Selection**: Selective field retrieval for large documents
+1.  **Specific Indexes**: Defined in `firestore.indexes.json` to support common query patterns (filtering, sorting).
+2.  **Query Limiting**: Client-side logic should limit the number of documents fetched (`limit()`).
+3.  **Field Selection**: Use `select()` in Firestore queries when only specific fields are needed (less common with Firestore compared to SQL).
+4.  **Denormalization**: Reduces the need for complex joins (see Data Model).
 
 ### Indexing Strategy
 
-The database uses a strategic indexing approach:
+Firestore requires indexes for most compound queries (filtering/sorting on multiple fields).
 
-- **Single-Field Indexes**: For common filter operations
-- **Compound Indexes**: For multi-field queries
-- **Array-Contains Indexes**: For array queries
+-   **Index Definition**: Indexes are defined in `firestore.indexes.json` and deployed via the Firebase CLI.
+-   **Source of Truth**: Refer to `firestore.indexes.json` for the complete list of active indexes. `Data_Models_Schema.md` provides examples based on common query patterns.
+-   **Maintenance**: Indexes must be updated as query patterns evolve.
 
 ### Caching and Offline Support
 
-The application implements caching strategies:
-
-1. **Local Persistence**: Enabled for offline support
-2. **Cache Size Management**: Optimized for device limitations
-3. **Cache Invalidation**: Controlled through stale times
+-   **Firestore Persistence**: The client SDK provides offline data persistence out-of-the-box, caching recently accessed data.
+-   **Client-Side Caching**: Libraries like TanStack Query manage client-side data caching, synchronization, and stale times, reducing redundant Firestore reads.
 
 ## Best Practices
 
@@ -387,32 +393,24 @@ Simple Tracker follows these Firebase best practices:
 
 ### Error Handling
 
-Error handling follows consistent patterns:
+-   Implement robust error handling on both client and server for Firebase operations.
+-   Catch and handle specific Firebase error codes (e.g., `permission-denied`, `unavailable`).
+-   Provide informative feedback to users.
 
-1. **Error Classification**: Categorized by error type
-2. **Retry Logic**: Automatic retry for transient errors
-3. **User Feedback**: Appropriate error messages based on error type
+### Batch Operations & Transactions
 
-### Batch Operations
-
-Batch operations are used for multi-document updates:
-
-1. **Transaction Support**: Atomic operations for consistency
-2. **Write Batching**: Grouped writes for performance
-3. **Error Recovery**: Partial success handling
+-   Use Firestore `writeBatch` for atomic writes to multiple documents.
+-   Use Firestore `runTransaction` for read-modify-write operations requiring consistency.
 
 ### Testing Approach
 
-Firebase integration is tested through:
-
-1. **Emulator Testing**: Local Firebase emulators
-2. **Mock Implementation**: Testing utilities for Firebase services
-3. **Integration Testing**: End-to-end testing of Firebase interactions
+-   Utilize the Firebase Local Emulator Suite for local development and testing of Auth, Firestore, and Storage rules/interactions.
+-   Write unit/integration tests mocking Firebase SDK calls where appropriate.
+-   Test security rules using the emulator's testing libraries.
 
 ### Data Lifecycle Management
 
-The application manages data through its lifecycle:
-
-1. **Active Data**: Current, frequently accessed data
-2. **Archived Data**: Historical data moved to lower-cost storage
-3. **Export Functionality**: Data export for external processing
+-   **Active Data**: Resides in primary collections (`tickets`, `workdays`).
+-   **Archiving**: Older/inactive data can be moved to the `archives` collection (metadata) and potentially cheaper Storage classes (requires admin-triggered process). `archiveStatus` field tracks state.
+-   **Export**: Admins can generate data exports stored in the `exports` collection/Storage path.
+-   **Cleanup**: Implement strategies (e.g., Cloud Functions, manual processes) to clean up expired `wizardStates`, expired `exports`, or temporary files.
